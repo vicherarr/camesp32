@@ -9,7 +9,7 @@ pub struct BleManager {
 impl BleManager {
     pub fn new() -> anyhow::Result<Self> {
         let device = BLEDevice::take();
-        BLEDevice::set_device_name("ESP32-CAM-WiFi-Trigger")?;
+        BLEDevice::set_device_name("CAM-ACTIVATE")?;
 
         let server = device.get_server();
         let is_connected = Arc::new(Mutex::new(false));
@@ -29,7 +29,7 @@ impl BleManager {
         let ble_advertising = device.get_advertising();
         ble_advertising.lock().start()?;
 
-        info!("BLE Advertising started.");
+        info!("BLE Advertising started as 'CAM-ACTIVATE'");
 
         Ok(Self { is_connected })
     }

@@ -5,10 +5,8 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
-import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
@@ -17,7 +15,6 @@ import android.os.Looper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.util.UUID
 
 sealed class BleState {
     object Idle : BleState()
@@ -56,21 +53,25 @@ class BleManager(private val context: Context) {
             return
         }
 
-        val scanFilter = ScanFilter.Builder()
-            .setDeviceName(targetDeviceName)
-            .build()
-
         val scanSettings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
         val scanCallback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult?) {
-                result?.device?.let { device ->
-                    val name = device.name ?: targetDeviceName
-                    _bleState.value = BleState.Found(name, device.address, result.rssi)
-                    scanner.stopScan(this)
-                    connectAndWakeup(device)
+                result?.let { scanRes ->
+                    val device = scanRes.device
+                    val foundName = device.name ?: scanRes.scanRecord?.deviceName ?: ""
+                    
+                    // Match either targetDeviceName ("CAM-ACTIVATE"), "ESP32-CAM-WiFi-Trigger", or any device with "CAM"
+                    if (foundName.contains("CAM", ignoreCase = true) || 
+                        foundName.contains(targetDeviceName, ignoreCase = true) || 
+                        foundName.contains("ESP32", ignoreCase = true)) {
+                        
+                        _bleState.value = BleState.Found(foundName.ifEmpty { targetDeviceName }, device.address, scanRes.rssi)
+                        scanner.stopScan(this)
+                        connectAndWakeup(device)
+                    }
                 }
             }
 
@@ -79,15 +80,16 @@ class BleManager(private val context: Context) {
             }
         }
 
-        scanner.startScan(listOf(scanFilter), scanSettings, scanCallback)
+        // Start scanning without restrictive hardware filter for maximum Android device compatibility
+        scanner.startScan(null, scanSettings, scanCallback)
 
-        // Timeout scan after 10 seconds
+        // Timeout scan after 12 seconds
         handler.postDelayed({
             if (_bleState.value is BleState.Scanning) {
                 scanner.stopScan(scanCallback)
                 _bleState.value = BleState.Error("No se encontró el dispositivo BLE '$targetDeviceName'")
             }
-        }, 10000)
+        }, 12000)
     }
 
     @SuppressLint("MissingPermission")
@@ -107,7 +109,6 @@ class BleManager(private val context: Context) {
 
             override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
                 if (status == BluetoothGatt.GATT_SUCCESS && gatt != null) {
-                    // Find any writable characteristic to send trigger byte
                     val service = gatt.services.firstOrNull()
                     val characteristic = service?.characteristics?.firstOrNull()
 
