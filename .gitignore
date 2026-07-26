@@ -1,0 +1,11 @@
+# Build & IDE directories
+**/target/
+**/.embuild/
+**/.gradle/
+**/build/
+**/.idea/
+**/.vscode/
+*.apk
+*.elf
+*.bin
+local.properties
