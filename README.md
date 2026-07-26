@@ -57,6 +57,28 @@ El firmware está optimizado para la placa **ESP32-S3-CAM** (procesador Xtensa L
 | **Cámara PWDN** | `GPIO-1` (Deshabilitado)| Control de apagado del sensor |
 | **Cámara RESET** | `GPIO-1` (Deshabilitado)| Reset por software del sensor |
 
+### 🔌 Diagrama de Cableado: Sensor de Presencia <---> ESP32-S3-CAM
+
+```text
+       ┌────────────────────────┐                   ┌────────────────────────┐
+       │   Sensor Radar         │                   │     ESP32-S3-CAM       │
+       │    RCWL-0516           │                   │                        │
+       │  ┌──────────────────┐  │                   │  ┌──────────────────┐  │
+       │  │       3V3        ├──┼─── (NC)           │  │       5V         ├──┼─── (VCC 5V)
+       │  │       GND        ├──┼───────────────────┼──┤       GND        │  │
+       │  │       OUT        ├──┼───────────────────┼──┤      GPIO13      │  │
+       │  │       VIN        ├──┼───────────────────┼──┤       5V         │  │
+       │  │       CDS        ├──┼─── (NC)           │  └──────────────────┘  │
+       │  └──────────────────┘  │                   └────────────────────────┘
+       └────────────────────────┘
+```
+
+#### Detalle de Conexión Pin a Pin:
+1. **VIN (Sensor)** ➔ Conectar al pin **`5V`** del ESP32-S3-CAM *(El sensor opera con voltaje entre 4V y 12V)*.
+2. **GND (Sensor)** ➔ Conectar al pin **`GND`** del ESP32-S3-CAM *(Referencia común de masa)*.
+3. **OUT (Sensor)** ➔ Conectar al pin **`GPIO13`** del ESP32-S3-CAM *(Salida digital 3.3V: emite nivel ALTO al detectar movimiento para despertar la placa de Light Sleep)*.
+4. **Pines 3V3 y CDS**: Dejar desconectados (NC). *(El pin CDS permite añadir opcionalmente un LDR para desactivar el sensor con luz de día)*.
+
 ---
 
 ## 1.2 Gestión de Ultra-Bajo Consumo (BLE Light Sleep)
