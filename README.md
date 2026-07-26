@@ -10,22 +10,22 @@ El sistema permite operar un módulo de cámara de seguridad oculto totalmente a
 
 ```mermaid
 graph TD
-    A[Batería / Powerbank] -->|5V / GND| B[ESP32-S3-CAM]
-    C[Radar RCWL-0516 / PIR] -->|GPIO13 Interrupt| B
+    A["Batería / Powerbank"] -->|5V / GND| B["ESP32-S3-CAM"]
+    C["Radar RCWL-0516 / PIR"] -->|GPIO13 Interrupt| B
     
-    subgraph ESP32-S3 Firmware (Rust + C FFI)
-        B --> D[BLE NimBLE Server: 'CAM-ACTIVATE']
-        D -->|Modo Reposo: Light Sleep| E[Bajo Consumo ~mA]
+    subgraph sub1 ["ESP32-S3 Firmware"]
+        B --> D["BLE NimBLE Server: CAM-ACTIVATE"]
+        D -->|Modo Reposo: Light Sleep| E["Bajo Consumo ~mA"]
         
-        B -->|Detección Presencia / Trigger BLE| F[Despertar Módem WiFi]
-        F --> G[WiFi AP: 'ESP32-CAM-Seguridad']
-        G --> H[Servidor HTTP Basic Auth]
-        H --> I[Driver Cámara OV2640 / OV5640]
-        H --> J[Almacenamiento VFS MicroSD]
+        B -->|Detección Presencia / Trigger BLE| F["Despertar Módem WiFi"]
+        F --> G["WiFi AP: ESP32-CAM-Seguridad"]
+        G --> H["Servidor HTTP Basic Auth"]
+        H --> I["Driver Cámara OV2640 / OV5640"]
+        H --> J["Almacenamiento VFS MicroSD"]
     end
 
-    subgraph App Android (Kotlin + Compose)
-        K[App CamEspDroid] -->|1. Escaneo & Activation Pulse| D
+    subgraph sub2 ["App Android"]
+        K["App CamEspDroid"] -->|1. Escaneo & Activation Pulse| D
         K -->|2. Conexión WiFi HTTP| H
         K -->|3. Streaming & Captura| I
         K -->|4. Galería de Archivos| J
