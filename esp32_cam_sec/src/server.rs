@@ -66,6 +66,8 @@ impl WebServer {
                                 ::log::error!("Network write error: {}", e);
                                 break;
                             }
+                            // Yield CPU to prevent WiFi task starvation
+                            std::thread::sleep(std::time::Duration::from_millis(5));
                         },
                         Err(e) => {
                             ::log::error!("File read error: {}", e);
