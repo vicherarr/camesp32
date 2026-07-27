@@ -28,18 +28,23 @@ impl WebServer {
         server.fn_handler("/photos", Method::Get, |request| {
             let mut response = request.into_ok_response()?;
             if let Ok(mut entries) = fs::read_dir("/sdcard") {
-                let mut files: Vec<String> = vec![];
+                response.write_all(b"<html><body><h2>Lista de Fotos</h2><ul>")?;
+                
+                let mut count = 0;
                 while let Some(Ok(entry)) = entries.next() {
-                    files.push(entry.file_name().to_string_lossy().to_string());
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    let item = format!("<li><a href='/file/{}'>{}</a></li>", name, name);
+                    if let Err(e) = response.write_all(item.as_bytes()) {
+                        ::log::error!("Network write error: {}", e);
+                        break;
+                    }
+                    count += 1;
+                    if count >= 100 {
+                        // Limit to 100 files to avoid massive HTML pages
+                        break;
+                    }
                 }
-                files.sort_by(|a, b| b.cmp(a));
-
-                let mut html = String::from("<html><body><h2>Lista de Fotos</h2><ul>");
-                for name in files {
-                    html.push_str(&format!("<li><a href='/file/{}'>{}</a></li>", name, name));
-                }
-                html.push_str("</ul></body></html>");
-                response.write_all(html.as_bytes())?;
+                response.write_all(b"</ul></body></html>")?;
             } else {
                 response.write_all(b"Error leyendo SD card")?;
             }
@@ -66,8 +71,6 @@ impl WebServer {
                                 ::log::error!("Network write error: {}", e);
                                 break;
                             }
-                            // Yield CPU to prevent WiFi task starvation
-                            std::thread::sleep(std::time::Duration::from_millis(5));
                         },
                         Err(e) => {
                             ::log::error!("File read error: {}", e);

@@ -91,21 +91,15 @@ fn main() -> anyhow::Result<()> {
 
         if is_motion {
             info!("Motion detected!");
-            let start = SystemTime::now();
-            let mut count = 0;
-            while start.elapsed().unwrap().as_secs() < 10 {
-                if let Some(ref camera) = cam {
-                    if let Some(pic) = camera.take_picture() {
-                        let filename = format!("img_{}.jpg", SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs());
-                        if let Some(ref storage) = sd {
-                            let _ = storage.save_photo(&filename, &pic);
-                        }
-                        count += 1;
+            if let Some(ref camera) = cam {
+                if let Some(pic) = camera.take_picture() {
+                    let filename = format!("img_{}.jpg", SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs());
+                    if let Some(ref storage) = sd {
+                        let _ = storage.save_photo(&filename, &pic);
                     }
+                    info!("Saved photo to /sdcard/{}", filename);
                 }
-                thread::sleep(Duration::from_millis(500));
             }
-            info!("Capture finished. Took {} photos.", count);
             
             info!("Waiting for 5s of inactivity...");
             let mut inactive_start = SystemTime::now();
