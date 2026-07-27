@@ -16,6 +16,11 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,14 +41,13 @@ fun SettingsScreen(
     currentPort: String,
     currentUser: String,
     currentPass: String,
-    currentBleName: String,
-    onSaveSettings: (ip: String, port: String, user: String, pass: String, bleName: String) -> Unit
+    onSaveSettings: (ip: String, port: String, user: String, pass: String) -> Unit,
+    onConfigEspWifi: (mode: String, ssid: String, pass: String) -> Unit
 ) {
     var ip by remember { mutableStateOf(currentIp) }
     var port by remember { mutableStateOf(currentPort) }
     var user by remember { mutableStateOf(currentUser) }
     var pass by remember { mutableStateOf(currentPass) }
-    var bleName by remember { mutableStateOf(currentBleName) }
 
     Column(
         modifier = Modifier
@@ -104,33 +108,56 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AccentCyan)
                 )
+            }
+        }
 
-                Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-                Text("Nombre Dispositivo BLE", color = AccentCyan, fontWeight = FontWeight.Bold)
+        // ESP32 WiFi Configuration
+        var espMode by remember { mutableStateOf("STA") }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = SurfaceCard)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Configurar WiFi del ESP32", color = AccentCyan, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(12.dp))
 
-                OutlinedTextField(
-                    value = bleName,
-                    onValueChange = { bleName = it },
-                    label = { Text("Nombre Anuncio BLE") },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AccentCyan)
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (espMode == "AP") "Modo: Punto de Acceso (AP)" else "Modo: Cliente (STA)", color = Color.White)
+                    Switch(
+                        checked = espMode == "STA",
+                        onCheckedChange = { isSta -> espMode = if (isSta) "STA" else "AP" },
+                        colors = SwitchDefaults.colors(checkedThumbColor = AccentCyan, checkedTrackColor = AccentCyan.copy(alpha = 0.5f))
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = { onConfigEspWifi(espMode, "", "") },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentCyan.copy(alpha = 0.8f))
+                ) {
+                    Text("Enviar Config a ESP32", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
             }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
         Button(
-            onClick = { onSaveSettings(ip, port, user, pass, bleName) },
+            onClick = { onSaveSettings(ip, port, user, pass) },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp),
-            shape = RoundedCornerShape(14.dp),
+                .height(56.dp),
+            shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = AccentCyan)
         ) {
-            Text("Guardar Cambios", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text("Guardar Cambios de Red Android", fontWeight = FontWeight.Bold, fontSize = 16.sp)
         }
     }
 }

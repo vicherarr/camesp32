@@ -47,15 +47,7 @@ El firmware está optimizado para la placa **ESP32-S3-CAM** (procesador Xtensa L
 | **Alimentación** | `5V` | Entrada de alimentación (Powerbank / Regulador) |
 | **Tierra** | `GND` | Referencia común de masa |
 | **Radar RCWL-0516** | `GPIO13` | Entrada de interrupción digital (`ext0_wakeup`) |
-| **Cámara XCLK** | `GPIO15` | Reloj del sensor de cámara |
-| **Cámara SIOD (SDA)**| `GPIO4` | Bus I2C de configuración del sensor (SCCB) |
-| **Cámara SIOC (SCL)**| `GPIO5` | Reloj I2C del sensor (SCCB) |
-| **Cámara VSYNC** | `GPIO6` | Sincronización vertical de cuadro |
-| **Cámara HREF** | `GPIO7` | Sincronización horizontal de línea |
-| **Cámara PCLK** | `GPIO13` | Reloj de píxeles del sensor |
-| **Cámara D0 - D7** | `GPIO11, 9, 8, 10, 12, 18, 17, 16` | Bus paralelo de datos de imagen |
-| **Cámara PWDN** | `GPIO-1` (Deshabilitado)| Control de apagado del sensor |
-| **Cámara RESET** | `GPIO-1` (Deshabilitado)| Reset por software del sensor |
+| **Cámara USB OTG** | `D+/D-` | Puerto USB OTG para conectar una cámara UVC compatible |
 
 ### 🔌 Diagrama de Cableado: Sensor de Presencia <---> ESP32-S3-CAM
 
@@ -98,10 +90,10 @@ El código está escrito en **Rust puro** (`xtensa-esp32s3-espidf`) utilizando l
 
 * [build.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/build.rs): Script de compilación personalizada. Compila los archivos fuente en C del driver de la cámara (`esp_camera.c`, `cam_hal.c`, `sccb.c`, `ov2640.c`, `ov5640.c`, `ll_cam.c`) usando el compilador `xtensa-esp32s3-elf-gcc`. Aplica la bandera `-mlongcalls` para evitar errores de reubicación en la memoria IRAM de interrupciones.
 * [src/main.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/main.rs): Orquestador principal del sistema. Inicializa el almacenamiento, la cámara y el servidor BLE, ejecutando el bucle de control de energía y despertares.
-* [src/camera.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/camera.rs): Envoltorio de bindings FFI C -> Rust para inicializar la matriz de la cámara y capturar buffers de imagen en formato JPEG nativo.
+* [src/camera.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/camera.rs): Preparado para inicializar una cámara USB OTG UVC. No bloquea el sistema si la cámara no está conectada.
 * [src/ble.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/ble.rs): Implementación de la pila Bluetooth NimBLE con servicio personalizado de recepción de eventos de activación.
-* [src/wifi.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/wifi.rs): Configuración del punto de acceso SoftAP con SSID `ESP32-CAM-Seguridad` y clave WPA2 `12345678`.
-* [src/server.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/server.rs): Servidor HTTP empotrado con soporte de autenticación HTTP Basic Auth (`admin`/`admin123`), streaming de fotogramas (`/capture`) y listado de archivos SD (`/sdcard/`).
+* [src/wifi.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/wifi.rs): Gestión dual de WiFi, permitiendo configurar el ESP32 como punto de acceso SoftAP (`ESP32-CAM-Seguridad`) o conectarse a una red WiFi existente (STA mode).
+* [src/server.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/server.rs): Servidor HTTP empotrado con listado de archivos SD (`/sdcard/`) y un endpoint JSON para consultar el estado en tiempo real del sensor de movimiento (`/sensor`).
 * [src/storage.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/storage.rs): Controlador del sistema de archivos VFS FATFS para lectura/escritura en tarjeta MicroSD.
 * [sdkconfig.defaults](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/sdkconfig.defaults): Configuración de ESP-IDF para 16MB de memoria Flash y asignación de la tabla de particiones ampliada `CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE` (3.9 MB de aplicación).
 

@@ -1,10 +1,9 @@
 package com.vicherarr.camespdroid.viewmodel
 
 import android.app.Application
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.vicherarr.camespdroid.ble.BleManager
-import com.vicherarr.camespdroid.ble.BleState
 import com.vicherarr.camespdroid.model.MediaItem
 import com.vicherarr.camespdroid.network.CameraRepository
 import kotlinx.coroutines.Job
@@ -15,12 +14,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 data class UiState(
-    val ipAddress: String = "192.168.4.1",
+    val ipAddress: String = "192.168.71.1",
     val httpPort: String = "80",
     val username: String = "admin",
     val password: String = "admin123",
-    val bleDeviceName: String = "CAM-ACTIVATE",
     val isCameraOnline: Boolean = false,
+    val currentCameraMode: String = "",
+    val isMotionDetected: Boolean = false,
     val mediaList: List<MediaItem> = emptyList(),
     val isLoadingMedia: Boolean = false,
     val isLiveStreaming: Boolean = false,
@@ -32,12 +32,9 @@ data class UiState(
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = CameraRepository()
-    val bleManager = BleManager(application)
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
-
-    val bleState: StateFlow<BleState> = bleManager.bleState
 
     private var pingJob: Job? = null
 
@@ -48,10 +45,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val baseUrl: String
         get() = "http://${uiState.value.ipAddress}:${uiState.value.httpPort}"
 
-    fun triggerBleWakeup() {
-        bleManager.triggerWakeup(uiState.value.bleDeviceName)
-    }
-
     fun selectTab(index: Int) {
         _uiState.value = _uiState.value.copy(selectedTab = index)
         if (index == 1 || index == 2) {
@@ -59,13 +52,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateSettings(ip: String, port: String, user: String, pass: String, bleName: String) {
+    fun updateSettings(ip: String, port: String, user: String, pass: String) {
         _uiState.value = _uiState.value.copy(
             ipAddress = ip,
             httpPort = port,
             username = user,
-            password = pass,
-            bleDeviceName = bleName
+            password = pass
         )
         refreshMediaList()
     }
@@ -102,9 +94,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         pingJob?.cancel()
         pingJob = viewModelScope.launch {
             while (true) {
-                val isOnline = repository.pingCamera(baseUrl, uiState.value.username, uiState.value.password)
-                _uiState.value = _uiState.value.copy(isCameraOnline = isOnline)
+                if (!uiState.value.isCameraOnline) {
+                    val discoveredIp = repository.discoverCameraIP()
+                    if (discoveredIp != null && discoveredIp != uiState.value.ipAddress) {
+                        _uiState.value = _uiState.value.copy(ipAddress = discoveredIp)
+                    }
+                }
+
+                val currentBaseUrl = "http://${uiState.value.ipAddress}:${uiState.value.httpPort}"
+                val status = repository.pingCamera(currentBaseUrl, uiState.value.username, uiState.value.password)
+                _uiState.value = _uiState.value.copy(
+                    isCameraOnline = status.isOnline,
+                    currentCameraMode = status.mode,
+                    isMotionDetected = status.isMotionDetected
+                )
                 delay(5000)
+            }
+        }
+    }
+
+    fun sendEspConfig(mode: String, ssid: String, wifiPass: String) {
+        viewModelScope.launch {
+            val success = repository.sendEspConfig(baseUrl, uiState.value.username, uiState.value.password, mode, ssid, wifiPass)
+            if (success) {
+                _uiState.value = _uiState.value.copy(toastMessage = "Configuración enviada al ESP32 con éxito")
+            } else {
+                _uiState.value = _uiState.value.copy(toastMessage = "Error al enviar configuración al ESP32")
             }
         }
     }

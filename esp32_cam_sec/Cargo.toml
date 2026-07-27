@@ -26,9 +26,10 @@ log = "0.4"
 esp-idf-svc = { version = "0.52", features = ["critical-section"] }
 esp-idf-hal = "0.46"
 esp-idf-sys = { version = "0.37", features = ["binstart"] }
-esp32-nimble = "0.12.0"
 anyhow = "1.0"
 embedded-hal = "1.0.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
 
 [build-dependencies]
 embuild = { version = "0.32", features = ["espidf"] }

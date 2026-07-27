@@ -1,10 +1,6 @@
 package com.vicherarr.camespdroid.ui
 
-import android.Manifest
-import android.os.Build
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -54,37 +50,7 @@ import com.vicherarr.camespdroid.viewmodel.MainViewModel
 @Composable
 fun MainScreen(viewModel: MainViewModel) {
     val uiState by viewModel.uiState.collectAsState()
-    val bleState by viewModel.bleState.collectAsState()
     val context = LocalContext.current
-
-    // Runtime BLE permission requester
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val allGranted = permissions.values.all { it }
-        if (!allGranted) {
-            Toast.makeText(context, "Permisos BLE requeridos para despertar el dispositivo", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            permissionLauncher.launch(
-                arrayOf(
-                    Manifest.permission.BLUETOOTH_SCAN,
-                    Manifest.permission.BLUETOOTH_CONNECT,
-                    Manifest.permission.ACCESS_FINE_LOCATION
-                )
-            )
-        } else {
-            permissionLauncher.launch(
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                )
-            )
-        }
-    }
 
     LaunchedEffect(uiState.toastMessage) {
         uiState.toastMessage?.let { msg ->
@@ -117,7 +83,7 @@ fun MainScreen(viewModel: MainViewModel) {
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (uiState.isCameraOnline) "WIFI ONLINE" else "SLEEP BLE",
+                                    text = if (uiState.isCameraOnline) "WIFI ONLINE" else "OFFLINE",
                                     color = Color.White,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold
@@ -170,9 +136,9 @@ fun MainScreen(viewModel: MainViewModel) {
         ) {
             when (uiState.selectedTab) {
                 0 -> HomeScreen(
-                    bleState = bleState,
                     isCameraOnline = uiState.isCameraOnline,
-                    onTriggerWakeup = { viewModel.triggerBleWakeup() },
+                    currentCameraMode = uiState.currentCameraMode,
+                    isMotionDetected = uiState.isMotionDetected,
                     onNavigateToLive = { viewModel.selectTab(1) }
                 )
                 1 -> LiveStreamScreen(
@@ -196,9 +162,11 @@ fun MainScreen(viewModel: MainViewModel) {
                     currentPort = uiState.httpPort,
                     currentUser = uiState.username,
                     currentPass = uiState.password,
-                    currentBleName = uiState.bleDeviceName,
-                    onSaveSettings = { ip, port, user, pass, bleName ->
-                        viewModel.updateSettings(ip, port, user, pass, bleName)
+                    onSaveSettings = { ip, port, user, pass ->
+                        viewModel.updateSettings(ip, port, user, pass)
+                    },
+                    onConfigEspWifi = { mode, ssid, pass ->
+                        viewModel.sendEspConfig(mode, ssid, pass)
                     }
                 )
             }
