@@ -3,10 +3,18 @@ use esp_idf_svc::wifi::{EspWifi, ClientConfiguration, AccessPointConfiguration, 
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_hal::peripherals::Peripherals;
+use esp_idf_hal::gpio::PinDriver;
 use log::{info, error, warn};
 use std::thread;
 use std::time::Duration;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 use esp_idf_sys::{esp_netif_get_handle_from_ifkey, esp_netif_get_ip_info, esp_netif_ip_info_t};
+
+// LED States
+const STATE_CONNECTING: u8 = 0; // Parpadeo medio (500ms)
+const STATE_CONNECTED: u8 = 1;  // Luz fija ON
+const STATE_ERROR: u8 = 2;      // Parpadeo muy rápido (100ms)
 
 fn main() -> anyhow::Result<()> {
     // Patches for ESP-IDF
@@ -21,6 +29,38 @@ fn main() -> anyhow::Result<()> {
     let peripherals = Peripherals::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
     let nvs = EspDefaultNvsPartition::take()?;
+
+    // Configure Built-in LED on GPIO2
+    let mut led = PinDriver::output(peripherals.pins.gpio2)?;
+    let led_state = Arc::new(AtomicU8::new(STATE_CONNECTING));
+    let led_state_clone = led_state.clone();
+
+    // LED controller thread
+    thread::spawn(move || {
+        let mut on = false;
+        loop {
+            match led_state_clone.load(Ordering::Relaxed) {
+                STATE_CONNECTING => {
+                    let _ = led.set_level(on);
+                    on = !on;
+                    thread::sleep(Duration::from_millis(500));
+                },
+                STATE_CONNECTED => {
+                    let _ = led.set_high();
+                    thread::sleep(Duration::from_millis(500)); // Sleep to not hog CPU, state won't change often
+                },
+                STATE_ERROR => {
+                    let _ = led.set_level(on);
+                    on = !on;
+                    thread::sleep(Duration::from_millis(100));
+                },
+                _ => {
+                    let _ = led.set_low();
+                    thread::sleep(Duration::from_millis(500));
+                }
+            }
+        }
+    });
 
     let mut wifi = EspWifi::new(
         peripherals.modem,
@@ -76,7 +116,9 @@ fn main() -> anyhow::Result<()> {
     }
 
     if !connected {
-        error!("Could not connect to target network. Rebooting.");
+        error!("Could not connect to target network. Indicating error and rebooting.");
+        led_state.store(STATE_ERROR, Ordering::Relaxed);
+        thread::sleep(Duration::from_secs(5)); // Show error for 5 seconds
         unsafe { sys::esp_restart(); }
     }
     
@@ -103,10 +145,12 @@ fn main() -> anyhow::Result<()> {
             info!("NAPT Enabled Successfully!");
         } else {
             error!("CRITICAL: Could not find AP netif! NAT will not work.");
+            led_state.store(STATE_ERROR, Ordering::Relaxed);
         }
     }
 
     info!("Repeater is now running. Connect to '{}'", ap_ssid);
+    led_state.store(STATE_CONNECTED, Ordering::Relaxed);
 
     // Keep main thread alive and monitor connection
     loop {
@@ -115,9 +159,10 @@ fn main() -> anyhow::Result<()> {
         let is_up = wifi.is_connected().unwrap_or(false);
         if !is_up {
             warn!("Lost connection to upstream AP. Attempting to reconnect...");
+            led_state.store(STATE_CONNECTING, Ordering::Relaxed);
             let _ = wifi.connect();
         } else {
-            info!("Repeater health check: OK");
+            led_state.store(STATE_CONNECTED, Ordering::Relaxed);
         }
     }
 }
