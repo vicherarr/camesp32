@@ -32,7 +32,7 @@ graph TD
 
     subgraph sub2 ["App Android"]
         K["App CamEspDroid"] -->|1. Escaneo & Activation Pulse| D
-        K -->|2. Conexión WiFi HTTP (a 192.168.1.220)| R2
+        K -->|2. Conexión WiFi HTTP a 192.168.1.220| R2
         K -->|3. Streaming & Captura| I
         K -->|4. Galería de Archivos| J
     end
