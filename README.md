@@ -104,6 +104,15 @@ El código está escrito en **Rust puro** (`xtensa-esp32s3-espidf`) utilizando l
 * [src/storage.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/storage.rs): Controlador del sistema de archivos VFS FATFS para lectura/escritura en tarjeta MicroSD.
 * [sdkconfig.defaults](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/sdkconfig.defaults): Configuración de ESP-IDF para 16MB de memoria Flash y asignación de la tabla de particiones ampliada `CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE` (3.9 MB de aplicación).
 
+### 🌐 Endpoints HTTP de la Cámara
+La cámara expone un servidor HTTP en el puerto 80 con las siguientes rutas:
+- **`GET /`**: Devuelve un Dashboard HTML sencillo.
+- **`GET /photos`**: Devuelve una lista HTML en streaming con los archivos guardados en la tarjeta MicroSD (límite de 100 archivos para optimizar memoria).
+- **`GET /file/*`**: Sirve en streaming el archivo solicitado (e.g. `GET /file/img_123.jpg`) con cabecera `image/jpeg`.
+- **`GET /info`**: Devuelve JSON con el estado de la placa `{"device": "ESP32-CAM", "mode": "STA", "motion": true/false}`.
+- **`GET /sensor`**: Devuelve JSON rápido enfocado al radar `{"motion": true/false}`.
+- **`POST /config`**: Recibe un payload JSON `{"mode": "STA"|"AP"}` para guardar el nuevo modo de red en memoria persistente (NVS) e iniciar un reinicio automático.
+
 ---
 
 ## 1.4 Compilación y Flasheo del ESP32-S3
