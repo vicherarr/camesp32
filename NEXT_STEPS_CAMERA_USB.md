@@ -7,7 +7,7 @@
   - La Galería SD está funcionando.
   - **BUG RESUELTO**: Se producían falsas caídas de WiFi en la App al abrir la Galería porque Coil abría demasiados sockets a la vez. Se ha solucionado implementando `ImageLoaderFactory` con `maxRequestsPerHost = 1`.
 - **Tarjeta SD**: 
-  - **BUG RESUELTO**: Se ha reducido el `max_freq_khz` de la tarjeta a 10MHz en `storage.rs` para prevenir picos de voltaje que desconectaban el WiFi del ESP32.
+  - **MEJORA**: Se ha devuelto la velocidad de la tarjeta SD a 20MHz (por defecto) ya que la inestabilidad de red era puramente por la saturación de conexiones desde Android, logrando así lecturas más rápidas.
   - **BUG RESUELTO**: El endpoint web `/photos` ahora responde en streaming y está limitado a los 100 archivos más recientes para evitar agotar la RAM de la placa y colgar las peticiones (`timeout` en Android).
 
 ## Siguiente Tarea Pendiente

@@ -22,7 +22,7 @@ impl Storage {
             let mut host: sdmmc_host_t = std::mem::zeroed();
             host.flags = 1;
             host.slot = SDMMC_HOST_SLOT_1 as i32;
-            host.max_freq_khz = 10000;
+            host.max_freq_khz = SDMMC_FREQ_DEFAULT as i32;
             host.io_voltage = 3.3;
             host.init = Some(sdmmc_host_init);
             host.set_bus_width = Some(sdmmc_host_set_bus_width);
