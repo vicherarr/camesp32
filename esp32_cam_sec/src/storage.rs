@@ -49,6 +49,8 @@ impl Storage {
             slot_config.d5 = -1;
             slot_config.d6 = -1;
             slot_config.d7 = -1;
+            slot_config.__bindgen_anon_1.cd = -1;
+            slot_config.__bindgen_anon_2.wp = -1;
             slot_config.width = 1;
 
             let mount_config = esp_vfs_fat_sdmmc_mount_config_t {
