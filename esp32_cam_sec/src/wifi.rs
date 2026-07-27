@@ -33,11 +33,12 @@ impl<'a> WifiManager<'a> {
             }
             WifiMode::STA => {
                 let mut client_config = ClientConfiguration::default();
-                client_config.ssid = "DIGIFIBRA-42H6".try_into().unwrap();
+                client_config.ssid = "DIGIFIBRA-42H6_EXT".try_into().unwrap();
                 client_config.password = "Uyy4ZEPhXP".try_into().unwrap();
+                client_config.auth_method = AuthMethod::WPA2Personal;
                 
                 wifi.set_configuration(&Configuration::Client(client_config))?;
-                info!("WiFi STA configured to connect to SSID: DIGIFIBRA-42H6");
+                info!("WiFi STA configured to connect to SSID: DIGIFIBRA-42H6_EXT");
             }
         }
         
