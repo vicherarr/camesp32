@@ -52,14 +52,27 @@ impl WebServer {
             let path = format!("/sdcard/{}", file_name);
             
             if let Ok(mut file) = fs::File::open(&path) {
-                let mut buf = Vec::new();
-                file.read_to_end(&mut buf)?;
                 let mut response = request.into_response(
                     200, 
                     Some("OK"), 
                     &[("Content-Type", "image/jpeg")]
                 )?;
-                response.write_all(&buf)?;
+                let mut buf = [0u8; 4096];
+                loop {
+                    match file.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            if let Err(e) = response.write_all(&buf[..n]) {
+                                ::log::error!("Network write error: {}", e);
+                                break;
+                            }
+                        },
+                        Err(e) => {
+                            ::log::error!("File read error: {}", e);
+                            break;
+                        }
+                    }
+                }
             } else {
                 let mut response = request.into_status_response(404)?;
                 response.write_all(b"Not found")?;
