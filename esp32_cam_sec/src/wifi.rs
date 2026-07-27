@@ -45,9 +45,9 @@ impl<'a> WifiManager<'a> {
                     if !sta_netif.is_null() {
                         esp_idf_sys::esp_netif_dhcpc_stop(sta_netif);
                         let mut info: esp_idf_sys::esp_netif_ip_info_t = std::mem::zeroed();
-                        info.ip.addr = esp_idf_sys::esp_ip4addr_aton(b"192.168.71.220\0".as_ptr() as *const _);
-                        info.netmask.addr = esp_idf_sys::esp_ip4addr_aton(b"255.255.255.0\0".as_ptr() as *const _);
-                        info.gw.addr = esp_idf_sys::esp_ip4addr_aton(b"192.168.71.1\0".as_ptr() as *const _);
+                        info.ip.addr = esp_idf_sys::ipaddr_addr(b"192.168.71.220\0".as_ptr() as *const _);
+                        info.netmask.addr = esp_idf_sys::ipaddr_addr(b"255.255.255.0\0".as_ptr() as *const _);
+                        info.gw.addr = esp_idf_sys::ipaddr_addr(b"192.168.71.1\0".as_ptr() as *const _);
                         esp_idf_sys::esp_netif_set_ip_info(sta_netif, &info);
                     }
                 }

@@ -102,9 +102,9 @@ fn main() -> anyhow::Result<()> {
         if !sta_netif.is_null() {
             esp_idf_sys::esp_netif_dhcpc_stop(sta_netif);
             let mut info: esp_idf_sys::esp_netif_ip_info_t = std::mem::zeroed();
-            info.ip.addr = esp_idf_sys::esp_ip4addr_aton(b"192.168.1.220\0".as_ptr() as *const _);
-            info.netmask.addr = esp_idf_sys::esp_ip4addr_aton(b"255.255.255.0\0".as_ptr() as *const _);
-            info.gw.addr = esp_idf_sys::esp_ip4addr_aton(b"192.168.1.1\0".as_ptr() as *const _);
+            info.ip.addr = esp_idf_sys::ipaddr_addr(b"192.168.1.220\0".as_ptr() as *const _);
+            info.netmask.addr = esp_idf_sys::ipaddr_addr(b"255.255.255.0\0".as_ptr() as *const _);
+            info.gw.addr = esp_idf_sys::ipaddr_addr(b"192.168.1.1\0".as_ptr() as *const _);
             esp_idf_sys::esp_netif_set_ip_info(sta_netif, &info);
         }
     }
@@ -159,10 +159,11 @@ fn main() -> anyhow::Result<()> {
             
             // Enable Port Forwarding to the Camera
             info!("Enabling Port Forwarding to camera at 192.168.71.220");
-            // proto: 6 (TCP), maddr: 0 (ANY), mport: 80, daddr: 192.168.71.220, dport: 80
-            esp_idf_sys::ip_portmap_add(6, 0, 80, esp_idf_sys::esp_ip4addr_aton(b"192.168.71.220\0".as_ptr() as *const _), 80);
+            // proto: 6 (TCP), maddr: STA IP, mport: 80, daddr: 192.168.71.220, dport: 80
+            esp_idf_sys::ip_portmap_add(6, esp_idf_sys::ipaddr_addr(b"192.168.1.220\0".as_ptr() as *const _), 80, esp_idf_sys::ipaddr_addr(b"192.168.71.220\0".as_ptr() as *const _), 80);
         } else {
             error!("CRITICAL: Could not find AP netif! NAT will not work.");
+
 
             led_state.store(STATE_ERROR, Ordering::Relaxed);
         }
