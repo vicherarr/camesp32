@@ -28,7 +28,7 @@ fn main() -> anyhow::Result<()> {
     
     let motion_sensor = PinDriver::input(peripherals.pins.gpio13, Pull::Down)?;
 
-    const ENABLE_SD: bool = false;
+    const ENABLE_SD: bool = true;
     let sd = if ENABLE_SD {
         match storage::Storage::new() {
             Ok(s) => Some(s),
