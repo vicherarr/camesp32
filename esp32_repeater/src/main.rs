@@ -76,20 +76,19 @@ fn main() -> anyhow::Result<()> {
     // Repeated Network (AP)
     let ap_ssid = "DIGIFIBRA-42H6_EXT";
     let ap_pass = "Uyy4ZEPhXP";
-    let ap_channel = 6; // Fixed channel for stability
 
     info!("Configuring AP/STA Modes...");
     wifi.set_configuration(&Configuration::Mixed(
         ClientConfiguration {
             ssid: sta_ssid.try_into().unwrap(),
             password: sta_pass.try_into().unwrap(),
+            auth_method: AuthMethod::WPA2Personal,
             ..Default::default()
         },
         AccessPointConfiguration {
             ssid: ap_ssid.try_into().unwrap(),
             password: ap_pass.try_into().unwrap(),
             auth_method: AuthMethod::WPA2Personal,
-            channel: ap_channel,
             max_connections: 4, // Maximize memory stability
             ..Default::default()
         }
