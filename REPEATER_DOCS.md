@@ -56,8 +56,8 @@ cargo espflash flash --release --port /dev/ttyUSB0 --monitor
    - **SSID**: `DIGIFIBRA-42H6_EXT`
    - **Clave**: `Uyy4ZEPhXP`
 
-## 💡 Indicador LED (GPIO2)
-El repetidor cuenta con un sistema visual de diagnóstico a través del LED rojo integrado en la placa:
-- **Parpadeo Medio (cada medio segundo)**: Buscando conexión o reconectando a `DIGIFIBRA-42H6`.
-- **Luz Fija Encendida**: Conexión establecida con éxito y red extendida (NAT) operativa.
-- **Parpadeo Rápido (estroboscópico)**: Error grave (ej. no se encuentra la red tras varios intentos). La placa se reiniciará automáticamente.
+## 💡 Indicador LED (GPIO2 / TX)
+El repetidor cuenta con un sistema visual de diagnóstico a través del LED integrado en la placa (en muchas NodeMCU clónicas, este LED está conectado al puerto serie TX y parpadeará solo durante el arranque):
+- **Parpadeo Durante el Arranque**: La placa está inicializándose y escribiendo logs (arranque, conexión y habilitación de NAPT).
+- **LED Apagado Tras el Arranque**: En placas NodeMCU con LED en modo Active-HIGH o mapeado al puerto TX, el LED se apagará una vez que el sistema entra en modo de bajo consumo (sleep loop de 15s), lo cual **es completamente normal y significa que está funcionando con éxito**.
+- **Canal Forzado**: Para evitar problemas de salto de canal en modo mixto, el repetidor **fuerza** que la red `DIGIFIBRA-42H6_EXT` se cree exactamente en el canal 4, coincidiendo con el canal del router original.
