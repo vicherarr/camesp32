@@ -46,7 +46,7 @@ fn main() -> anyhow::Result<()> {
                     thread::sleep(Duration::from_millis(500));
                 },
                 STATE_CONNECTED => {
-                    let _ = led.set_high();
+                    let _ = led.set_low(); // Active-LOW: low means ON
                     thread::sleep(Duration::from_millis(500)); // Sleep to not hog CPU, state won't change often
                 },
                 STATE_ERROR => {
@@ -55,7 +55,7 @@ fn main() -> anyhow::Result<()> {
                     thread::sleep(Duration::from_millis(100));
                 },
                 _ => {
-                    let _ = led.set_low();
+                    let _ = led.set_high(); // Active-LOW: high means OFF
                     thread::sleep(Duration::from_millis(500));
                 }
             }
