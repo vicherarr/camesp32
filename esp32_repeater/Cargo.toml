@@ -1,0 +1,27 @@
+[package]
+name = "esp32_repeater"
+version = "0.1.0"
+authors = ["AI Assistant"]
+edition = "2021"
+resolver = "2"
+rust-version = "1.77"
+
+[profile.release]
+opt-level = "s"
+
+[profile.dev]
+debug = true
+opt-level = "z"
+
+[features]
+default = []
+
+[dependencies]
+log = "0.4"
+esp-idf-svc = { version = "0.52", features = ["critical-section"] }
+esp-idf-hal = "0.46"
+esp-idf-sys = { version = "0.37", features = ["binstart"] }
+anyhow = "1.0"
+
+[build-dependencies]
+embuild = { version = "0.32", features = ["espidf"] }
