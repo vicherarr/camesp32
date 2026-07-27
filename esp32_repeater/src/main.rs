@@ -95,6 +95,20 @@ fn main() -> anyhow::Result<()> {
         }
     ))?;
 
+    // Configurar IP Fija (192.168.1.220) para el Repetidor en la red del router principal via C API
+    info!("Configuring static IP for Repeater on main network (192.168.1.220)...");
+    unsafe {
+        let sta_netif = esp_idf_sys::esp_netif_get_handle_from_ifkey(b"WIFI_STA_DEF\0".as_ptr() as *const _);
+        if !sta_netif.is_null() {
+            esp_idf_sys::esp_netif_dhcpc_stop(sta_netif);
+            let mut info: esp_idf_sys::esp_netif_ip_info_t = std::mem::zeroed();
+            info.ip.addr = esp_idf_sys::esp_ip4addr_aton(b"192.168.1.220\0".as_ptr() as *const _);
+            info.netmask.addr = esp_idf_sys::esp_ip4addr_aton(b"255.255.255.0\0".as_ptr() as *const _);
+            info.gw.addr = esp_idf_sys::esp_ip4addr_aton(b"192.168.1.1\0".as_ptr() as *const _);
+            esp_idf_sys::esp_netif_set_ip_info(sta_netif, &info);
+        }
+    }
+
     info!("Starting WiFi...");
     wifi.start()?;
     
@@ -122,8 +136,7 @@ fn main() -> anyhow::Result<()> {
         unsafe { sys::esp_restart(); }
     }
     
-    info!("Waiting for DHCP IP assignment on STA interface...");
-    // Wait until STA actually gets an IP address (important for NAT)
+    info!("Waiting for network initialization on STA interface...");
     thread::sleep(Duration::from_secs(3));
 
     // Enable NAPT on the AP interface
@@ -143,8 +156,14 @@ fn main() -> anyhow::Result<()> {
             info!("Enabling NAPT (Network Address and Port Translation)...");
             ip_napt_enable(ap_ip, 1);
             info!("NAPT Enabled Successfully!");
+            
+            // Enable Port Forwarding to the Camera
+            info!("Enabling Port Forwarding to camera at 192.168.71.220");
+            // proto: 6 (TCP), maddr: 0 (ANY), mport: 80, daddr: 192.168.71.220, dport: 80
+            esp_idf_sys::ip_portmap_add(6, 0, 80, esp_idf_sys::esp_ip4addr_aton(b"192.168.71.220\0".as_ptr() as *const _), 80);
         } else {
             error!("CRITICAL: Could not find AP netif! NAT will not work.");
+
             led_state.store(STATE_ERROR, Ordering::Relaxed);
         }
     }

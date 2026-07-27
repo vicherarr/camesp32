@@ -1,0 +1,4 @@
+Commands:
+    CTRL+R    Reset chip
+    CTRL+C    Exit
+

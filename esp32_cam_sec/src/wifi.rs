@@ -38,9 +38,24 @@ impl<'a> WifiManager<'a> {
                 client_config.auth_method = AuthMethod::WPA2Personal;
                 
                 wifi.set_configuration(&Configuration::Client(client_config))?;
-                info!("WiFi STA configured to connect to SSID: DIGIFIBRA-42H6_EXT");
+                
+                // Configurar IP Fija (192.168.71.220) via C API
+                unsafe {
+                    let sta_netif = esp_idf_sys::esp_netif_get_handle_from_ifkey(b"WIFI_STA_DEF\0".as_ptr() as *const _);
+                    if !sta_netif.is_null() {
+                        esp_idf_sys::esp_netif_dhcpc_stop(sta_netif);
+                        let mut info: esp_idf_sys::esp_netif_ip_info_t = std::mem::zeroed();
+                        info.ip.addr = esp_idf_sys::esp_ip4addr_aton(b"192.168.71.220\0".as_ptr() as *const _);
+                        info.netmask.addr = esp_idf_sys::esp_ip4addr_aton(b"255.255.255.0\0".as_ptr() as *const _);
+                        info.gw.addr = esp_idf_sys::esp_ip4addr_aton(b"192.168.71.1\0".as_ptr() as *const _);
+                        esp_idf_sys::esp_netif_set_ip_info(sta_netif, &info);
+                    }
+                }
+
+                info!("WiFi STA configured to connect to SSID: DIGIFIBRA-42H6_EXT with static IP 192.168.71.220");
             }
         }
+
         
         wifi.start()?;
         
