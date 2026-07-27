@@ -57,7 +57,7 @@ cargo espflash flash --release --port /dev/ttyUSB0 --monitor
    - **Clave**: `Uyy4ZEPhXP`
 
 ## 💡 Indicador LED (GPIO2)
-El repetidor cuenta con un sistema visual de diagnóstico a través del LED azul integrado en la placa:
+El repetidor cuenta con un sistema visual de diagnóstico a través del LED rojo integrado en la placa:
 - **Parpadeo Medio (cada medio segundo)**: Buscando conexión o reconectando a `DIGIFIBRA-42H6`.
 - **Luz Fija Encendida**: Conexión establecida con éxito y red extendida (NAT) operativa.
 - **Parpadeo Rápido (estroboscópico)**: Error grave (ej. no se encuentra la red tras varios intentos). La placa se reiniciará automáticamente.
