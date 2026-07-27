@@ -39,9 +39,9 @@ impl Storage {
             host.set_input_delay = Some(sdmmc_host_set_input_delay);
 
             let mut slot_config: sdmmc_slot_config_t = std::mem::zeroed();
-            slot_config.clk = 14;
-            slot_config.cmd = 15;
-            slot_config.d0 = 2;
+            slot_config.clk = 39;
+            slot_config.cmd = 38;
+            slot_config.d0 = 40;
             slot_config.d1 = -1;
             slot_config.d2 = -1;
             slot_config.d3 = -1;
