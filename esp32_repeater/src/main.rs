@@ -89,6 +89,7 @@ fn main() -> anyhow::Result<()> {
             ssid: ap_ssid.try_into().unwrap(),
             password: ap_pass.try_into().unwrap(),
             auth_method: AuthMethod::WPA2Personal,
+            channel: 4, // Explicitly match STA channel to prevent AP broadcast issues
             max_connections: 4, // Maximize memory stability
             ..Default::default()
         }
