@@ -13,24 +13,31 @@ graph TD
     A["Batería / Powerbank"] -->|5V / GND| B["ESP32-S3-CAM"]
     C["Radar RCWL-0516 / PIR"] -->|GPIO13 Interrupt| B
     
-    subgraph sub1 ["ESP32-S3 Firmware"]
+    subgraph sub1 ["ESP32-S3 Firmware (192.168.71.220)"]
         B --> D["BLE NimBLE Server: CAM-ACTIVATE"]
         D -->|Modo Reposo: Light Sleep| E["Bajo Consumo ~mA"]
         
         B -->|Detección Presencia / Trigger BLE| F["Despertar Módem WiFi"]
-        F --> G["WiFi AP: ESP32-CAM-Seguridad"]
+        F --> G["WiFi STA: Conecta a Repetidor"]
         G --> H["Servidor HTTP Basic Auth"]
-        H --> I["Driver Cámara OV2640 / OV5640"]
+        H --> I["Driver Cámara UVC USB OTG"]
         H --> J["Almacenamiento VFS MicroSD"]
     end
+    
+    subgraph sub3 ["ESP32-Repeater (NAT Port Forwarding)"]
+        R1["WiFi AP: DIGIFIBRA-42H6_EXT (192.168.71.1)"] -->|NAPT| R2["WiFi STA: 192.168.1.220"]
+    end
+    
+    G --> R1
 
     subgraph sub2 ["App Android"]
         K["App CamEspDroid"] -->|1. Escaneo & Activation Pulse| D
-        K -->|2. Conexión WiFi HTTP| H
+        K -->|2. Conexión WiFi HTTP (a 192.168.1.220)| R2
         K -->|3. Streaming & Captura| I
         K -->|4. Galería de Archivos| J
     end
 ```
+
 
 ---
 

@@ -11,8 +11,10 @@
   - **BUG RESUELTO**: El endpoint web `/photos` ahora responde en streaming y está limitado a los 100 archivos más recientes para evitar agotar la RAM de la placa y colgar las peticiones (`timeout` en Android).
 
 ## Siguiente Tarea Pendiente
-1. **Poner IP Fija real en la placa**: La app apunta a `192.168.1.143` pero falta asegurarse de que la placa ESP32 realmente negocie y reclame siempre esa IP fija en `wifi.rs` en el router del usuario.
-2. **Implementar el driver nativo UVC (USB Video Class)**: Para capturar los frames reales cuando se enchufe la cámara física USB OTG en los pines D+/D- del ESP32-S3.
+1. ~~**Poner IP Fija real en la placa**~~: **COMPLETADO**. La placa de la cámara ahora tiene asignada la IP estática `192.168.71.220` (gestionada mediante `ipaddr_addr` de la API en C `esp_netif_set_ip_info`).
+2. ~~**Crear enrutador/repetidor NAT (esp32_repeater)**~~: **COMPLETADO**. Se ha implementado un repetidor ESP32 intermedio con NAPT usando LwIP (ip4_napt) que levanta la red extendida (`DIGIFIBRA-42H6_EXT` en `192.168.71.1`). 
+    - **Solución NAPT**: Se ha configurado correctamente el *Port Forwarding* usando `ip_portmap_add`, asociándolo a la interfaz WAN (STA IP: `192.168.1.220`), permitiendo el acceso HTTP transparente desde la red principal. Todo el ruteo de extremo a extremo está operativo.
+3. **Implementar el driver nativo UVC (USB Video Class)**: Para capturar los frames reales cuando se enchufe la cámara física USB OTG en los pines D+/D- del ESP32-S3.
 
 ### Pasos a seguir para la Cámara Física (Para el Agente IA que retome esto)
 1. **Quitar el Dummy JPEG**: En `esp32_cam_sec/src/camera.rs`, eliminar el array de bytes simulado (`dummy_jpeg`) dentro de `take_picture()`.
