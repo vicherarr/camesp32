@@ -76,7 +76,7 @@ class CameraRepository {
         try {
             val credential = Credentials.basic(user, pass)
             val request = Request.Builder()
-                .url("$baseUrl/sdcard/")
+                .url("$baseUrl/photos")
                 .header("Authorization", credential)
                 .build()
 
@@ -84,13 +84,14 @@ class CameraRepository {
             if (!response.isSuccessful) return@withContext emptyList()
 
             val body = response.body?.string() ?: ""
-            // Parse HTML directory listing or JSON files from SD card
+            // Parse HTML directory listing
             val items = mutableListOf<MediaItem>()
-            val hrefRegex = Regex("href=[\"']([^\"']+\\.(?:jpg|jpeg|png|mp4|avi))[\"']", RegexOption.IGNORE_CASE)
+            val hrefRegex = Regex("href=[\"'](/file/[^\"']+\\.(?:jpg|jpeg|png|mp4|avi))[\"']", RegexOption.IGNORE_CASE)
             var index = 0
             hrefRegex.findAll(body).forEach { match ->
-                val filename = match.groupValues[1]
-                val fullUrl = if (filename.startsWith("http")) filename else "$baseUrl/sdcard/$filename"
+                val uriPath = match.groupValues[1]
+                val fullUrl = "$baseUrl$uriPath"
+                val filename = uriPath.removePrefix("/file/")
                 items.add(
                     MediaItem(
                         id = "media_${index++}",

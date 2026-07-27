@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 data class UiState(
-    val ipAddress: String = "192.168.71.1",
+    val ipAddress: String = "192.168.1.143",
     val httpPort: String = "80",
     val username: String = "admin",
     val password: String = "admin123",
