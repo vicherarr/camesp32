@@ -41,7 +41,7 @@ fn main() -> anyhow::Result<()> {
         loop {
             match led_state_clone.load(Ordering::Relaxed) {
                 STATE_CONNECTING => {
-                    let _ = led.set_level(on);
+                    let _ = led.set_level(on.into());
                     on = !on;
                     thread::sleep(Duration::from_millis(500));
                 },
@@ -50,7 +50,7 @@ fn main() -> anyhow::Result<()> {
                     thread::sleep(Duration::from_millis(500)); // Sleep to not hog CPU, state won't change often
                 },
                 STATE_ERROR => {
-                    let _ = led.set_level(on);
+                    let _ = led.set_level(on.into());
                     on = !on;
                     thread::sleep(Duration::from_millis(100));
                 },
