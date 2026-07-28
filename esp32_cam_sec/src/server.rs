@@ -95,6 +95,19 @@ impl WebServer {
             Ok::<(), anyhow::Error>(())
         })?;
         
+        // Debug log readback: returns the RAM ring buffer as plain text. This is
+        // our only window once USB-OTG host mode kills the serial console.
+        server.fn_handler("/logs", Method::Get, |request| {
+            let logs = crate::logbuf::dump();
+            let mut response = request.into_response(
+                200,
+                Some("OK"),
+                &[("Content-Type", "text/plain; charset=utf-8")],
+            )?;
+            response.write_all(logs.as_bytes())?;
+            Ok::<(), anyhow::Error>(())
+        })?;
+
         // New endpoint to report sensor state
         let motion_state_clone = motion_state.clone();
         server.fn_handler("/sensor", Method::Get, move |request| {

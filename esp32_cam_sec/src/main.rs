@@ -4,6 +4,7 @@ mod storage;
 mod wifi;
 mod config;
 mod discovery;
+mod logbuf;
 
 use esp_idf_sys::esp_sleep_enable_ext0_wakeup;
 use esp_idf_hal::peripherals::Peripherals;
@@ -17,8 +18,10 @@ use esp_idf_svc::nvs::EspDefaultNvsPartition;
 
 fn main() -> anyhow::Result<()> {
     sys::link_patches();
-    esp_idf_svc::log::EspLogger::initialize_default();
-    
+    // Ring-buffer logger instead of EspLogger: keeps the last lines in RAM so
+    // they can be read over WiFi (/logs) after USB host mode kills the console.
+    logbuf::init();
+
     info!("Starting ESP32-CAM Security Project (WiFi Always-On)...");
 
     let peripherals = Peripherals::take()?;
@@ -40,14 +43,6 @@ fn main() -> anyhow::Result<()> {
     } else {
         info!("SD storage disabled at boot (no card / driver guard). Skipping mount.");
         None
-    };
-    
-    let cam = match camera::Camera::new() {
-        Ok(c) => Some(c),
-        Err(e) => {
-            error!("Camera init failed (continuing without camera): {}", e);
-            None
-        }
     };
     
     let motion_state = Arc::new(AtomicBool::new(false));
@@ -80,6 +75,17 @@ fn main() -> anyhow::Result<()> {
     let _web_server = server::WebServer::new(motion_state.clone(), nvs_partition.clone(), current_mode_str).ok();
 
     discovery::start_discovery_server();
+
+    // Camera init happens last, after the network stack is up: when this becomes
+    // a real USB-OTG host driver it takes over the USB pins (killing the serial
+    // console), so we want WiFi + /logs already running to observe/diagnose it.
+    let cam = match camera::Camera::new() {
+        Ok(c) => Some(c),
+        Err(e) => {
+            error!("Camera init failed (continuing without camera): {}", e);
+            None
+        }
+    };
 
     unsafe {
         esp_sleep_enable_ext0_wakeup(13, 1);
