@@ -8,7 +8,8 @@ rust-version = "1.77"
 
 [package.metadata.esp-idf-sys]
 extra_components = [
-    { path = "components/esp32-camera" }
+    { path = "components/esp32-camera" },
+    { remote_component = { name = "espressif/usb_host_uvc", version = "2.5.1" }, bindings_header = "src/uvc_bindings.h", bindings_module = "uvc" },
 ]
 
 [profile.release]
