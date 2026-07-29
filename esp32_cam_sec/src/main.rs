@@ -130,7 +130,9 @@ fn main() -> anyhow::Result<()> {
             if let Some(s) = status.as_mut() { let _ = s.white(); }   // flash blanco al capturar
             if let Some(ref camera) = cam {
                 if let Some(pic) = camera.take_picture() {
-                    let filename = format!("img_{}.jpg", SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs());
+                    // Nombre corto compatible con FAT 8.3 (LFN off): "IMGnnnnn.jpg" (8 chars).
+                    let secs = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) % 100000;
+                    let filename = format!("IMG{:05}.jpg", secs);
                     if let Some(ref storage) = sd {
                         let _ = storage.save_photo(&filename, &pic);
                     }

@@ -113,6 +113,7 @@ El código está escrito en **Rust puro** (`xtensa-esp32s3-espidf`) utilizando l
 La cámara expone un servidor HTTP en el puerto 80 con las siguientes rutas:
 - **`GET /`**: Devuelve un Dashboard HTML sencillo.
 - **`GET /photo`**: **Captura una foto en vivo** de la cámara integrada y la devuelve como `image/jpeg` (VGA 640×480). Si el sensor no da JPEG nativo (GC0308), se codifica a JPEG por software. Útil para comprobar la cámara sin el sensor conectado.
+- **`GET /capture`**: Captura una foto **y la guarda en la SD** (`/sdcard/CAP_<ms>.JPG`), devolviendo JSON `{"status":"ok",...}`. Es el endpoint que usa el botón *"capturar foto"* de la app Android.
 - **`GET /logs`**: Devuelve en texto plano el buffer de logs en RAM (para diagnóstico por WiFi cuando no hay consola serie).
 - **`GET /photos`**: Devuelve una lista HTML en streaming con los archivos guardados en la tarjeta MicroSD (límite de 100 archivos para optimizar memoria).
 - **`GET /file/*`**: Sirve en streaming el archivo solicitado (e.g. `GET /file/img_123.jpg`) con cabecera `image/jpeg`.
