@@ -9,3 +9,8 @@
 *.elf
 *.bin
 local.properties
+
+# Descargas de terceros y artefactos locales
+manual/
+foto_camara_prueba.jpg
+scratch_*.png

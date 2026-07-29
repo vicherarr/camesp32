@@ -16,7 +16,7 @@ impl Default for AppConfig {
 }
 
 pub fn load_config(partition: EspDefaultNvsPartition) -> (AppConfig, EspNvs<NvsDefault>) {
-    let mut nvs = match EspNvs::new(partition, "config", true) {
+    let nvs = match EspNvs::new(partition, "config", true) {
         Ok(n) => n,
         Err(e) => {
             error!("Failed to open NVS: {}", e);

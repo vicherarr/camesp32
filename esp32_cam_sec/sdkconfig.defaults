@@ -27,3 +27,13 @@ CONFIG_SPIRAM_IGNORE_NOTFOUND=y
 # FreeRTOS clock
 CONFIG_FREERTOS_HZ=1000
 CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
+
+# USB Host (OTG) tuning for the UVC (isochronous MJPEG) camera
+# Bias the internal USB FIFO toward IN transfers (camera streams IN).
+CONFIG_USB_HOST_HW_BUFFER_BIAS_IN=y
+# Larger control transfers so full config descriptors fit in one go.
+CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=1024
+
+# Desactivar la consola USB JTAG para liberar los pines 19 y 20 para el USB Host
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=n

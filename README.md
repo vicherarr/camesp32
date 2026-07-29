@@ -45,16 +45,19 @@ graph TD
 
 ## 1.1 Especificaciones de Hardware y Pinout
 
-El firmware está optimizado para la placa **ESP32-S3-CAM** (procesador Xtensa LX7 Dual-Core a 240 MHz con 16MB de Flash y Soporte PSRAM).
+El firmware está optimizado para la placa **Freenove ESP32-S3-WROOM CAM** (procesador Xtensa LX7 Dual-Core a 240 MHz, 8 MB de Flash + 8 MB de PSRAM octal). La cámara es la **integrada de serie (sensor GC0308) por cable plano / bus DVP**, no una cámara USB.
 
 ### Esquema de Conexiones de Pines
 
 | Componente | Pin ESP32-S3 | Función / Descripción |
 | :--- | :--- | :--- |
-| **Alimentación** | `5V` | Entrada de alimentación (Powerbank / Regulador) |
+| **Alimentación** | `5V` (vía USB-C) | Se alimenta por cualquiera de los dos USB-C de la placa |
 | **Tierra** | `GND` | Referencia común de masa |
-| **Radar RCWL-0516** | `GPIO13` | Entrada de interrupción digital (`ext0_wakeup`) |
-| **Cámara USB OTG** | `D+/D-` | Puerto USB OTG para conectar una cámara UVC compatible |
+| **Radar RCWL-0516 (OUT)** | `GPIO14` | Entrada digital de movimiento (`ext0_wakeup`). ⚠️ **Antes GPIO13**, que colisionaba con el PCLK de la cámara |
+| **Cámara GC0308 (DVP, de serie)** | XCLK=15, SDA=4, SCL=5, D0..D7=11/9/8/10/12/18/17/16, VSYNC=6, HREF=7, PCLK=13 | Cámara integrada por cable plano (bus paralelo DVP) |
+| **LED de estado RGB (WS2812)** | `GPIO48` | LED de a bordo que indica el estado (arranque / WiFi / cámara) |
+| **MicroSD (SDMMC 1-bit)** | CLK=39, CMD=38, D0=40 | Almacenamiento de fotos |
+| **USB-OTG nativo** | `GPIO19/20` (D-/D+) | Reservado para USB host (no usar para otros fines) |
 
 ### 🔌 Diagrama de Cableado: Sensor de Presencia <---> ESP32-S3-CAM
 
@@ -65,7 +68,7 @@ El firmware está optimizado para la placa **ESP32-S3-CAM** (procesador Xtensa L
        │  ┌──────────────────┐  │                   │  ┌──────────────────┐  │
        │  │       3V3        ├──┼─── (NC)           │  │       5V         ├──┼─── (VCC 5V)
        │  │       GND        ├──┼───────────────────┼──┤       GND        │  │
-       │  │       OUT        ├──┼───────────────────┼──┤      GPIO13      │  │
+       │  │       OUT        ├──┼───────────────────┼──┤      GPIO14      │  │
        │  │       VIN        ├──┼───────────────────┼──┤       5V         │  │
        │  │       CDS        ├──┼─── (NC)           │  └──────────────────┘  │
        │  └──────────────────┘  │                   └────────────────────────┘
@@ -75,8 +78,10 @@ El firmware está optimizado para la placa **ESP32-S3-CAM** (procesador Xtensa L
 #### Detalle de Conexión Pin a Pin:
 1. **VIN (Sensor)** ➔ Conectar al pin **`5V`** del ESP32-S3-CAM *(El sensor opera con voltaje entre 4V y 12V)*.
 2. **GND (Sensor)** ➔ Conectar al pin **`GND`** del ESP32-S3-CAM *(Referencia común de masa)*.
-3. **OUT (Sensor)** ➔ Conectar al pin **`GPIO13`** del ESP32-S3-CAM *(Salida digital 3.3V: emite nivel ALTO al detectar movimiento para despertar la placa de Light Sleep)*.
+3. **OUT (Sensor)** ➔ Conectar al pin **`GPIO14`** del ESP32-S3-CAM *(Salida digital 3.3V: emite nivel ALTO al detectar movimiento)*. ⚠️ **Importante:** NO usar GPIO13 — ese pin es el **PCLK de la cámara** y provoca conflicto (la cámara no arranca). GPIO14 está libre, no es strapping pin y es RTC-capaz (válido para `ext0_wakeup`).
 4. **Pines 3V3 y CDS**: Dejar desconectados (NC). *(El pin CDS permite añadir opcionalmente un LDR para desactivar el sensor con luz de día)*.
+
+> 💡 **LED de estado (GPIO48):** al arrancar verás azul → morado (WiFi) → cian (servidor) y termina en **🟢 verde = cámara OK** (o **🔴 rojo = fallo de cámara**). Un **flash blanco** indica captura de foto al detectar movimiento.
 
 ---
 
@@ -95,18 +100,20 @@ El código está escrito en **Rust puro** (`xtensa-esp32s3-espidf`) utilizando l
 
 ### Módulos Principales:
 
-* [build.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/build.rs): Script de compilación personalizada. Compila los archivos fuente en C del driver de la cámara (`esp_camera.c`, `cam_hal.c`, `sccb.c`, `ov2640.c`, `ov5640.c`, `ll_cam.c`) usando el compilador `xtensa-esp32s3-elf-gcc`. Aplica la bandera `-mlongcalls` para evitar errores de reubicación en la memoria IRAM de interrupciones.
-* [src/main.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/main.rs): Orquestador principal del sistema. Inicializa el almacenamiento, la cámara y el servidor BLE, ejecutando el bucle de control de energía y despertares.
-* [src/camera.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/camera.rs): Preparado para inicializar una cámara USB OTG UVC. No bloquea el sistema si la cámara no está conectada.
-* [src/ble.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/ble.rs): Implementación de la pila Bluetooth NimBLE con servicio personalizado de recepción de eventos de activación.
+* [build.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/build.rs): Propaga el entorno de ESP-IDF (`embuild`). El driver de cámara se integra vía el **componente gestionado** `espressif/esp32-camera` (declarado en `idf_component.yml`), del que `esp-idf-sys` genera el módulo de bindings `camera_sys` (ver `src/camera_bindings.h`).
+* [src/main.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/main.rs): Orquestador principal. Inicializa el **LED de estado (GPIO48)**, el sensor de movimiento (**GPIO14**), el almacenamiento SD, WiFi, el servidor HTTP y la cámara, y ejecuta el bucle de control (captura foto al detectar movimiento).
+* [src/camera.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/camera.rs): Inicializa la **cámara DVP integrada de serie**. Detecta el sensor: si soporta JPEG (OV2640/OV3660) lo usa directo; si no (como el **GC0308**, PID `0x9b`), captura en **RGB565** y convierte a JPEG por software (`frame2jpg`). Cae a modo *mock* sin bloquear si no hay cámara.
+* [src/led.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/led.rs): Driver del **LED RGB WS2812 de a bordo (GPIO48)** vía RMT, para señalizar el estado del sistema por color.
 * [src/wifi.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/wifi.rs): Gestión dual de WiFi, permitiendo configurar el ESP32 como punto de acceso SoftAP (`ESP32-CAM-Seguridad`) o conectarse a una red WiFi existente (STA mode).
-* [src/server.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/server.rs): Servidor HTTP empotrado con listado de archivos SD (`/sdcard/`) y un endpoint JSON para consultar el estado en tiempo real del sensor de movimiento (`/sensor`).
+* [src/server.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/server.rs): Servidor HTTP empotrado: foto en vivo (`/photo`), listado/servido de fotos de la SD (`/photos`, `/file/*`), estado del sensor (`/sensor`, `/info`) y volcado de logs (`/logs`).
 * [src/storage.rs](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/src/storage.rs): Controlador del sistema de archivos VFS FATFS para lectura/escritura en tarjeta MicroSD.
 * [sdkconfig.defaults](file:///home/victor/develop/iot/camesp32/esp32_cam_sec/sdkconfig.defaults): Configuración de ESP-IDF para 16MB de memoria Flash y asignación de la tabla de particiones ampliada `CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE` (3.9 MB de aplicación).
 
 ### 🌐 Endpoints HTTP de la Cámara
 La cámara expone un servidor HTTP en el puerto 80 con las siguientes rutas:
 - **`GET /`**: Devuelve un Dashboard HTML sencillo.
+- **`GET /photo`**: **Captura una foto en vivo** de la cámara integrada y la devuelve como `image/jpeg` (VGA 640×480). Si el sensor no da JPEG nativo (GC0308), se codifica a JPEG por software. Útil para comprobar la cámara sin el sensor conectado.
+- **`GET /logs`**: Devuelve en texto plano el buffer de logs en RAM (para diagnóstico por WiFi cuando no hay consola serie).
 - **`GET /photos`**: Devuelve una lista HTML en streaming con los archivos guardados en la tarjeta MicroSD (límite de 100 archivos para optimizar memoria).
 - **`GET /file/*`**: Sirve en streaming el archivo solicitado (e.g. `GET /file/img_123.jpg`) con cabecera `image/jpeg`.
 - **`GET /info`**: Devuelve JSON con el estado de la placa `{"device": "ESP32-CAM", "mode": "STA", "motion": true/false}`.

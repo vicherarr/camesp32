@@ -8,7 +8,9 @@ rust-version = "1.77"
 
 [package.metadata.esp-idf-sys]
 extra_components = [
-    { path = "components/esp32-camera" },
+    # esp32-camera comes from idf_component.yml (managed component). We only need
+    # esp-idf-sys to generate the Rust bindings module `camera_sys` from its header.
+    { bindings_header = "src/camera_bindings.h", bindings_module = "camera_sys" },
     { remote_component = { name = "espressif/usb_host_uvc", version = "2.5.1" }, bindings_header = "src/uvc_bindings.h", bindings_module = "uvc" },
 ]
 
@@ -25,7 +27,7 @@ default = []
 [dependencies]
 log = "0.4"
 esp-idf-svc = { version = "0.52", features = ["critical-section"] }
-esp-idf-hal = "0.46"
+esp-idf-hal = { version = "0.46", features = ["rmt-legacy"] }
 esp-idf-sys = { version = "0.37", features = ["binstart"] }
 anyhow = "1.0"
 embedded-hal = "1.0.0"
