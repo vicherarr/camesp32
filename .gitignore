@@ -2,6 +2,7 @@
 **/target/
 **/.embuild/
 **/.gradle/
+**/.kotlin/
 **/build/
 **/.idea/
 **/.vscode/

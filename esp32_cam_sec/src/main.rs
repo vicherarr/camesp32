@@ -121,26 +121,44 @@ fn main() -> anyhow::Result<()> {
 
     let idle_color = cam_ok; // idle verde solo si la camara esta OK; rojo si no
     let mut tick: u32 = 0;
+
+    // Ráfaga en cada detección de movimiento: N fotos seguidas, una cada X ms.
+    const BURST_COUNT: u32 = 20;
+    const BURST_INTERVAL_MS: u64 = 500;
+    let mut photo_seq: u32 = 0; // nombres únicos por foto (IMGnnnnn.jpg)
+
     loop {
         let is_motion = motion_sensor.is_high();
         motion_state.store(is_motion, Ordering::Relaxed);
 
         if is_motion {
-            info!("Motion detected!");
-            if let Some(s) = status.as_mut() { let _ = s.white(); }   // flash blanco al capturar
+            info!("Motion detected! Capturing burst of {} photos...", BURST_COUNT);
+            if let Some(s) = status.as_mut() { let _ = s.white(); }   // blanco durante la ráfaga
             if let Some(ref camera) = cam {
-                if let Some(pic) = camera.take_picture() {
-                    // Nombre corto compatible con FAT 8.3 (LFN off): "IMGnnnnn.jpg" (8 chars).
-                    let secs = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) % 100000;
-                    let filename = format!("IMG{:05}.jpg", secs);
-                    if let Some(ref storage) = sd {
-                        let _ = storage.save_photo(&filename, &pic);
+                for _ in 0..BURST_COUNT {
+                    let frame_start = std::time::Instant::now();
+                    if let Some(pic) = camera.take_picture() {
+                        // Nombre corto compatible con FAT 8.3 (LFN off): "IMGnnnnn.jpg" (8 chars).
+                        let filename = format!("IMG{:05}.jpg", photo_seq % 100000);
+                        photo_seq = photo_seq.wrapping_add(1);
+                        if let Some(ref storage) = sd {
+                            let _ = storage.save_photo(&filename, &pic);
+                        }
+                        info!("Burst -> /sdcard/{}", filename);
                     }
-                    info!("Saved photo to /sdcard/{}", filename);
+                    // Cadencia objetivo de BURST_INTERVAL_MS por foto. La captura del
+                    // GC0308 ya consume ~0,5 s (JPEG por software), así que dormimos
+                    // solo lo que falte para completar el intervalo.
+                    let el = frame_start.elapsed().as_millis() as u64;
+                    if el < BURST_INTERVAL_MS {
+                        thread::sleep(Duration::from_millis(BURST_INTERVAL_MS - el));
+                    }
                 }
+            } else {
+                // Sin cámara: respeta la duración de la ráfaga para no spamear el log.
+                thread::sleep(Duration::from_millis(BURST_COUNT as u64 * BURST_INTERVAL_MS));
             }
-
-            info!("Waiting for 5s of inactivity...");
+            info!("Burst done. Waiting for 5s of inactivity...");
             let mut inactive_start = SystemTime::now();
             while inactive_start.elapsed().unwrap().as_secs() < 5 {
                 if motion_sensor.is_high() {

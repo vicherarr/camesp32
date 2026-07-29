@@ -106,6 +106,21 @@ class CameraRepository {
         }
     }
 
+    /** Descarga un fotograma JPEG de /photo (para la vista En Vivo por snapshots). */
+    suspend fun fetchSnapshot(baseUrl: String, user: String, pass: String): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            val credential = Credentials.basic(user, pass)
+            val request = Request.Builder()
+                .url("$baseUrl/photo")
+                .header("Authorization", credential)
+                .build()
+            val response = client.newCall(request).execute()
+            if (response.isSuccessful) response.body?.bytes() else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     suspend fun triggerCapture(baseUrl: String, user: String, pass: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val credential = Credentials.basic(user, pass)
@@ -114,6 +129,23 @@ class CameraRepository {
                 .header("Authorization", credential)
                 .build()
 
+            val response = client.newCall(request).execute()
+            response.isSuccessful
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** Borra TODAS las fotos de la SD del dispositivo (POST /deleteall). */
+    suspend fun deleteAllPhotos(baseUrl: String, user: String, pass: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val credential = Credentials.basic(user, pass)
+            val body = "".toRequestBody("application/json".toMediaTypeOrNull())
+            val request = Request.Builder()
+                .url("$baseUrl/deleteall")
+                .header("Authorization", credential)
+                .post(body)
+                .build()
             val response = client.newCall(request).execute()
             response.isSuccessful
         } catch (e: Exception) {

@@ -20,17 +20,23 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,8 +62,10 @@ fun GalleryScreen(
     password: String,
     selectedMedia: MediaItem?,
     onRefresh: () -> Unit,
-    onSelectMedia: (MediaItem?) -> Unit
+    onSelectMedia: (MediaItem?) -> Unit,
+    onDeleteAll: () -> Unit
 ) {
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -76,12 +84,19 @@ fun GalleryScreen(
                     fontSize = 20.sp
                 )
 
-                IconButton(
-                    onClick = onRefresh,
-                    modifier = Modifier
-                        .background(SurfaceCard, RoundedCornerShape(12.dp))
-                ) {
-                    Icon(imageVector = Icons.Default.Refresh, contentDescription = "Refrescar SD", tint = Color.White)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IconButton(
+                        onClick = { showDeleteConfirm = true },
+                        modifier = Modifier.background(SurfaceCard, RoundedCornerShape(12.dp))
+                    ) {
+                        Icon(imageVector = Icons.Default.DeleteSweep, contentDescription = "Borrar todas", tint = Color(0xFFE57373))
+                    }
+                    IconButton(
+                        onClick = onRefresh,
+                        modifier = Modifier.background(SurfaceCard, RoundedCornerShape(12.dp))
+                    ) {
+                        Icon(imageVector = Icons.Default.Refresh, contentDescription = "Refrescar SD", tint = Color.White)
+                    }
                 }
             }
 
@@ -140,6 +155,25 @@ fun GalleryScreen(
                     }
                 }
             }
+        }
+
+        // Confirmación de borrado total
+        if (showDeleteConfirm) {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirm = false },
+                containerColor = SurfaceCard,
+                title = { Text("Borrar todas las fotos", color = Color.White) },
+                text = { Text("¿Seguro que quieres borrar TODAS las fotos de la tarjeta SD? Esta acción no se puede deshacer.", color = Color.LightGray) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showDeleteConfirm = false
+                        onDeleteAll()
+                    }) { Text("Borrar todo", color = Color(0xFFE57373), fontWeight = FontWeight.Bold) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancelar", color = Color.White) }
+                }
+            )
         }
 
         // Fullscreen Media Modal Dialog

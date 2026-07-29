@@ -155,7 +155,8 @@ fun MainScreen(viewModel: MainViewModel) {
                     password = uiState.password,
                     selectedMedia = uiState.selectedMedia,
                     onRefresh = { viewModel.refreshMediaList() },
-                    onSelectMedia = { viewModel.selectMediaItem(it) }
+                    onSelectMedia = { viewModel.selectMediaItem(it) },
+                    onDeleteAll = { viewModel.deleteAllPhotos() }
                 )
                 3 -> SettingsScreen(
                     currentIp = uiState.ipAddress,

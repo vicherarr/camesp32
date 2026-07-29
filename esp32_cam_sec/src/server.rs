@@ -61,8 +61,38 @@ impl WebServer {
 
         server.fn_handler("/", Method::Get, |request| {
             let mut response = request.into_ok_response()?;
-            let html = "<html><body><h1>ESP32-CAM Seguridad</h1><a href='/photo'>Foto en vivo</a><br/><a href='/photos'>Ver Fotos (SD)</a><br/><a href='/sensor'>Estado del Sensor</a><br/><a href='/logs'>Logs</a></body></html>";
+            let html = "<html><body><h1>ESP32-CAM Seguridad</h1>\
+                <a href='/photo'>Foto en vivo</a><br/>\
+                <a href='/photos'>Ver Fotos (SD)</a><br/>\
+                <a href='/sensor'>Estado del Sensor</a><br/>\
+                <a href='/logs'>Logs</a><hr/>\
+                <form method='post' action='/deleteall' onsubmit='return confirm(\"¿Borrar TODAS las fotos de la SD?\")'>\
+                <button type='submit' style='color:#b00'>Borrar TODAS las fotos SD</button></form>\
+                </body></html>";
             response.write_all(html.as_bytes())?;
+            Ok::<(), anyhow::Error>(())
+        })?;
+
+        // Borra todas las fotos de la SD. Usado por la app y por el botón del dashboard.
+        server.fn_handler("/deleteall", Method::Post, |request| {
+            // Recolectar nombres primero, luego borrar (no borrar mientras se itera).
+            let mut names: Vec<String> = Vec::new();
+            if let Ok(entries) = fs::read_dir("/sdcard") {
+                for entry in entries.flatten() {
+                    names.push(entry.file_name().to_string_lossy().to_string());
+                }
+            }
+            let (mut deleted, mut errors) = (0u32, 0u32);
+            for n in names {
+                if fs::remove_file(format!("/sdcard/{}", n)).is_ok() {
+                    deleted += 1;
+                } else {
+                    errors += 1;
+                }
+            }
+            info!("SD wipe: {} fotos borradas, {} errores", deleted, errors);
+            let mut response = request.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
+            response.write_all(format!("{{\"deleted\":{},\"errors\":{}}}", deleted, errors).as_bytes())?;
             Ok::<(), anyhow::Error>(())
         })?;
 

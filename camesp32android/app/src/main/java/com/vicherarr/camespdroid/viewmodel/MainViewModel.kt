@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 data class UiState(
-    val ipAddress: String = "192.168.1.143",
+    val ipAddress: String = "192.168.1.220",
     val httpPort: String = "80",
     val username: String = "admin",
     val password: String = "admin123",
@@ -78,6 +78,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 refreshMediaList()
             } else {
                 _uiState.value = _uiState.value.copy(toastMessage = "Error al capturar foto")
+            }
+        }
+    }
+
+    fun deleteAllPhotos() {
+        viewModelScope.launch {
+            val success = repository.deleteAllPhotos(baseUrl, uiState.value.username, uiState.value.password)
+            if (success) {
+                _uiState.value = _uiState.value.copy(toastMessage = "Fotos de la SD borradas", mediaList = emptyList())
+                refreshMediaList()
+            } else {
+                _uiState.value = _uiState.value.copy(toastMessage = "Error al borrar las fotos")
             }
         }
     }

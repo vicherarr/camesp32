@@ -49,6 +49,13 @@ import com.vicherarr.camespdroid.ui.theme.AccentCyan
 import com.vicherarr.camespdroid.ui.theme.EmeraldGreen
 import com.vicherarr.camespdroid.ui.theme.SurfaceCard
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import com.vicherarr.camespdroid.network.CameraRepository
 
 @Composable
 fun LiveStreamScreen(
@@ -58,18 +65,28 @@ fun LiveStreamScreen(
     isCameraOnline: Boolean,
     onTriggerCapture: () -> Unit
 ) {
-    var refreshKey by remember { mutableStateOf(0L) }
     var autoRefresh by remember { mutableStateOf(true) }
+    // Último fotograma decodificado; se mantiene visible mientras baja el siguiente,
+    // así la vista En Vivo no parpadea a negro entre snapshots.
+    var frame by remember { mutableStateOf<ImageBitmap?>(null) }
+    var manualTick by remember { mutableStateOf(0) }
+    val repository = remember { CameraRepository() }
 
-    // Auto refresh snapshot stream every 1 second when active
-    LaunchedEffect(autoRefresh, isCameraOnline) {
-        while (autoRefresh && isCameraOnline) {
-            delay(1000)
-            refreshKey = System.currentTimeMillis()
+    // Bucle de snapshots: descarga /photo (no guarda en SD), decodifica y solo
+    // sustituye el frame cuando el nuevo está listo.
+    LaunchedEffect(isCameraOnline, autoRefresh, manualTick) {
+        while (isCameraOnline) {
+            val bytes = repository.fetchSnapshot(baseUrl, username, password)
+            if (bytes != null) {
+                val bmp = withContext(Dispatchers.Default) {
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                }
+                if (bmp != null) frame = bmp
+            }
+            if (!autoRefresh) break
+            delay(600)
         }
     }
-
-    val streamUrl = "$baseUrl/capture?t=$refreshKey"
 
     Column(
         modifier = Modifier
@@ -91,23 +108,19 @@ fun LiveStreamScreen(
                 contentAlignment = Alignment.Center
             ) {
                 if (isCameraOnline) {
-                    val context = LocalContext.current
-                    val imageRequest = remember(streamUrl, username, password) {
-                        ImageRequest.Builder(context)
-                            .data(streamUrl)
-                            .addHeader("Authorization", okhttp3.Credentials.basic(username, password))
-                            .crossfade(true)
-                            .build()
+                    val currentFrame = frame
+                    if (currentFrame != null) {
+                        Image(
+                            bitmap = currentFrame,
+                            contentDescription = "Camera Stream",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(20.dp))
+                        )
+                    } else {
+                        CircularProgressIndicator(color = AccentCyan)
                     }
-
-                    AsyncImage(
-                        model = imageRequest,
-                        contentDescription = "Camera Stream",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(20.dp))
-                    )
 
                     // Live Badge
                     Box(
@@ -155,7 +168,7 @@ fun LiveStreamScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
-                onClick = { refreshKey = System.currentTimeMillis() },
+                onClick = { manualTick++ },
                 modifier = Modifier
                     .size(56.dp)
                     .background(SurfaceCard, RoundedCornerShape(16.dp))
@@ -194,8 +207,8 @@ fun LiveStreamScreen(
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Detalles de Conexión HTTP", color = Color.White, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("URL Stream: $baseUrl/capture", color = Color.LightGray, fontSize = 12.sp)
-                Text("Resolución Sensor: OV2640 / OV5640 1080p JPEG", color = Color.LightGray, fontSize = 12.sp)
+                Text("URL Stream: $baseUrl/photo (snapshot ~1 fps)", color = Color.LightGray, fontSize = 12.sp)
+                Text("Sensor: GC0308 · VGA 640x480 · JPEG por software", color = Color.LightGray, fontSize = 12.sp)
                 Text("Autenticación: Basic Auth (admin)", color = Color.LightGray, fontSize = 12.sp)
             }
         }
