@@ -58,9 +58,31 @@ impl<'a> WifiManager<'a> {
 
         
         wifi.start()?;
-        
+
+        // Potencia de TX al máximo (prioridad: alcance). 84 = 21 dBm solicitados; el
+        // hardware lo satura a su máximo permitido. Refuerza el techo del sdkconfig.
+        unsafe {
+            let _ = esp_idf_sys::esp_wifi_set_max_tx_power(84);
+        }
+
         // Connect if in STA mode
         if let Ok(Configuration::Client(_)) = wifi.get_configuration() {
+            // WiFi Long Range (LR) en la interfaz STA: enlace de largo alcance ESP<->ESP
+            // con el repetidor (su AP _EXT también en LR). Protocolo propietario de
+            // Espressif: mucho más alcance/penetración a costa de velocidad (~0,25-1 Mbps).
+            // Debe fijarse tras wifi.start() y antes de connect().
+            unsafe {
+                let err = esp_idf_sys::esp_wifi_set_protocol(
+                    esp_idf_sys::wifi_interface_t_WIFI_IF_STA,
+                    esp_idf_sys::WIFI_PROTOCOL_LR as u8,
+                );
+                if err == esp_idf_sys::ESP_OK {
+                    info!("WiFi STA protocol = LR (Long Range)");
+                } else {
+                    ::log::warn!("No se pudo activar LR en STA (err 0x{:x})", err);
+                }
+            }
+
             wifi.connect()?;
             info!("WiFi STA connected.");
         }

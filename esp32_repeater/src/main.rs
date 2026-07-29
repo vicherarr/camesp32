@@ -111,7 +111,28 @@ fn main() -> anyhow::Result<()> {
 
     info!("Starting WiFi...");
     wifi.start()?;
-    
+
+    // WiFi Long Range (LR) SOLO en la interfaz AP (_EXT): el enlace repetidor<->CAM
+    // pasa a ser de largo alcance (ESP<->ESP, para llegar al garaje). La STA hacia el
+    // router de casa sigue en modo normal (802.11 b/g/n). El móvil NO se conecta a
+    // _EXT (va por el router y el port-forward), así que esto no le afecta.
+    unsafe {
+        let err = esp_idf_sys::esp_wifi_set_protocol(
+            esp_idf_sys::wifi_interface_t_WIFI_IF_AP,
+            esp_idf_sys::WIFI_PROTOCOL_LR as u8,
+        );
+        if err == sys::ESP_OK {
+            info!("WiFi AP (_EXT) protocol = LR (Long Range)");
+        } else {
+            warn!("No se pudo activar LR en AP (err 0x{:x})", err);
+        }
+
+        // Potencia de TX al máximo (prioridad: alcance). 84 = 21 dBm solicitados; el
+        // hardware lo satura a su máximo. Refuerza el techo del sdkconfig (20 dBm).
+        let _ = esp_idf_sys::esp_wifi_set_max_tx_power(84);
+        info!("WiFi TX power set to hardware max");
+    }
+
     // Connect to target network
     info!("Connecting to target network: {}...", sta_ssid);
     wifi.connect()?;
