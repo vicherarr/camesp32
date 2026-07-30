@@ -11,7 +11,8 @@ pub enum WifiMode {
 }
 
 pub struct WifiManager<'a> {
-    _wifi: EspWifi<'a>,
+    wifi: EspWifi<'a>,
+    is_sta: bool,
 }
 
 impl<'a> WifiManager<'a> {
@@ -58,13 +59,30 @@ impl<'a> WifiManager<'a> {
 
         
         wifi.start()?;
-        
+
         // Connect if in STA mode
-        if let Ok(Configuration::Client(_)) = wifi.get_configuration() {
+        let is_sta = matches!(wifi.get_configuration(), Ok(Configuration::Client(_)));
+        if is_sta {
             wifi.connect()?;
             info!("WiFi STA connected.");
         }
-        
-        Ok(Self { _wifi: wifi })
+
+        Ok(Self { wifi, is_sta })
+    }
+
+    /// Apaga SOLO la radio WiFi (esp_wifi_stop) manteniendo netif/lwip y el servidor HTTP
+    /// enlazados. Ahorra energía sin liberar el puerto 80 (evita EADDRINUSE al reencender).
+    pub fn radio_off(&mut self) -> Result<()> {
+        self.wifi.stop()?;
+        Ok(())
+    }
+
+    /// Reenciende la radio WiFi (y reconecta si es STA).
+    pub fn radio_on(&mut self) -> Result<()> {
+        self.wifi.start()?;
+        if self.is_sta {
+            let _ = self.wifi.connect();
+        }
+        Ok(())
     }
 }

@@ -46,34 +46,6 @@ fn show_led(status: &mut Option<led::StatusLed<'static>>, state: led::LedState, 
     }
 }
 
-/// WiFi AP + servidor HTTP para la media (bajo demanda). Se sueltan (drop) al apagar.
-struct MediaWifi {
-    _wifi: wifi::WifiManager<'static>,
-    _server: server::WebServer,
-}
-
-fn start_media_wifi(
-    nvs: &EspDefaultNvsPartition,
-    cfg: &config::AppConfig,
-    motion_state: Arc<AtomicBool>,
-    camera_ready: Arc<AtomicBool>,
-    armed: bool,
-) -> Option<MediaWifi> {
-    let modem = unsafe { esp_idf_hal::modem::Modem::steal() };
-    let mode = if cfg.mode == "STA" { wifi::WifiMode::STA } else { wifi::WifiMode::AP };
-    let wifi = match wifi::WifiManager::new(modem, mode, nvs.clone()) {
-        Ok(w) => w,
-        Err(e) => { error!("WiFi on-demand falló: {}", e); return None; }
-    };
-    let server = match server::WebServer::new(motion_state, nvs.clone(), cfg.mode.clone(), camera_ready, armed) {
-        Ok(s) => s,
-        Err(e) => { error!("Servidor HTTP falló: {}", e); return None; }
-    };
-    // (El descubrimiento UDP es redundante con BLE: la IP se reporta por BLE y en AP es fija.)
-    info!("Media WiFi ENCENDIDA (AP {}).", if cfg.mode == "STA" { "STA" } else { "MIWIFI" });
-    Some(MediaWifi { _wifi: wifi, _server: server })
-}
-
 fn main() -> anyhow::Result<()> {
     sys::link_patches();
     logbuf::init();
@@ -107,13 +79,26 @@ fn main() -> anyhow::Result<()> {
 
     let motion_state = Arc::new(AtomicBool::new(false));
     let camera_ready = Arc::new(AtomicBool::new(cam_ok));
+    let armed_flag = Arc::new(AtomicBool::new(cfg.alarm_armed));
 
-    let mut armed = cfg.alarm_armed;
-    let mut media: Option<MediaWifi> = None;
+    // WiFi inicializado UNA vez (deja lwip + netif listos) y radio apagada de inmediato.
+    // Toggleamos solo la radio (esp_wifi_start/stop): sin re-enlazar el puerto 80 ni caer lwip.
+    let wifi_mode = if cfg.mode == "STA" { wifi::WifiMode::STA } else { wifi::WifiMode::AP };
+    let modem = unsafe { esp_idf_hal::modem::Modem::steal() };
+    let mut wifi_mgr = wifi::WifiManager::new(modem, wifi_mode, nvs_partition.clone()).ok();
+    // NOTA: por ahora el WiFi AP arranca ENCENDIDO y estable (togglear la radio con BLE
+    // conectado da inestabilidad de coexistencia; el apagado on-demand/light-sleep es fase aparte).
+    let mut wifi_on = wifi_mgr.is_some();
+
+    // Servidor HTTP creado UNA vez (escucha siempre en :80; lwip ya está arriba).
+    let _server = server::WebServer::new(
+        motion_state.clone(), nvs_partition.clone(), cfg.mode.clone(), camera_ready.clone(), armed_flag.clone(),
+    ).ok();
+
     let mut last_record = Instant::now() - Duration::from_secs(RECORD_COOLDOWN_SECS + 1);
     let mut tick: u32 = 0;
 
-    info!("Runtime híbrido listo. armed={}, cámara={}", armed, cam_ok);
+    info!("Runtime híbrido listo. armed={}, cámara={}", cfg.alarm_armed, cam_ok);
 
     loop {
         tick = tick.wrapping_add(1);
@@ -129,26 +114,36 @@ fn main() -> anyhow::Result<()> {
         while let Some(cmd) = ble.take_command() {
             match cmd {
                 ble::CMD_ARM => {
-                    armed = true; cfg.alarm_armed = true;
+                    armed_flag.store(true, Ordering::Relaxed); cfg.alarm_armed = true;
                     let _ = config::save_config(&mut nvs_handle, &cfg);
                     info!("BLE: ARMADO");
                 }
                 ble::CMD_DISARM => {
-                    armed = false; cfg.alarm_armed = false;
+                    armed_flag.store(false, Ordering::Relaxed); cfg.alarm_armed = false;
                     let _ = config::save_config(&mut nvs_handle, &cfg);
                     info!("BLE: DESARMADO");
                 }
                 ble::CMD_WIFI_ON => {
-                    if media.is_none() {
-                        media = start_media_wifi(&nvs_partition, &cfg, motion_state.clone(), camera_ready.clone(), armed);
+                    if !wifi_on {
+                        if let Some(w) = wifi_mgr.as_mut() {
+                            match w.radio_on() {
+                                Ok(_) => { wifi_on = true; info!("Media WiFi ENCENDIDA."); }
+                                Err(e) => error!("radio_on falló: {}", e),
+                            }
+                        }
                     }
                 }
                 ble::CMD_WIFI_OFF => {
-                    if media.take().is_some() { info!("Media WiFi APAGADA."); }
+                    if wifi_on {
+                        if let Some(w) = wifi_mgr.as_mut() { let _ = w.radio_off(); }
+                        wifi_on = false;
+                        info!("Media WiFi APAGADA.");
+                    }
                 }
                 other => info!("BLE: comando desconocido 0x{:02x}", other),
             }
         }
+        let armed = armed_flag.load(Ordering::Relaxed);
 
         // --- Grabación por movimiento (solo armado, con enfriamiento) ---
         if armed && is_motion && last_record.elapsed().as_secs() >= RECORD_COOLDOWN_SECS {
@@ -160,18 +155,18 @@ fn main() -> anyhow::Result<()> {
             while quiet.elapsed().as_secs() < RECORD_COOLDOWN_SECS {
                 if ble.has_pending(ble::CMD_DISARM) { break; } // desarme inmediato
                 if motion_sensor.is_high() { quiet = Instant::now(); }
-                ble.update_state(armed, motion_sensor.is_high(), media.is_some());
+                ble.update_state(armed, motion_sensor.is_high(), wifi_on);
                 thread::sleep(Duration::from_millis(150));
             }
         }
 
         // --- Estado BLE + LED ---
-        ble.update_state(armed, is_motion, media.is_some());
+        ble.update_state(armed, is_motion, wifi_on);
         let led_state = if armed { led::LedState::ArmedWindow } else { led::LedState::Disarmed };
         show_led(&mut status, led_state, tick % 2 == 0);
 
         if tick % 40 == 0 {
-            info!("armed={} motion={} wifi={}", armed, is_motion, media.is_some());
+            info!("armed={} motion={} wifi={}", armed, is_motion, wifi_on);
         }
 
         thread::sleep(Duration::from_millis(250));
@@ -206,8 +201,11 @@ fn record_event_clip(cam: Option<&camera::Camera>, sd: Option<&storage::Storage>
         return;
     }
 
-    let idx = next_clip_index();
-    let path = format!("/sdcard/CLIP{:04}.AVI", idx);
+    // Nombre con fecha-hora si el reloj está puesto (LFN); si no, índice corto de reserva.
+    let path = match storage::now_stamp() {
+        Some(ts) => format!("/sdcard/{}.avi", ts),
+        None => format!("/sdcard/CLIP{:04}.avi", next_clip_index()),
+    };
 
     let mut rec = match video::VideoRecorder::new(&path, VIDEO_WIDTH, VIDEO_HEIGHT, 3) {
         Ok(r) => r,

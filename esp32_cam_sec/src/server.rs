@@ -65,7 +65,7 @@ fn set_armed_and_restart(partition: EspDefaultNvsPartition, armed: bool) {
 }
 
 impl WebServer {
-    pub fn new(motion_state: Arc<AtomicBool>, partition: EspDefaultNvsPartition, current_mode: String, camera_ready: Arc<AtomicBool>, armed: bool) -> Result<Self> {
+    pub fn new(motion_state: Arc<AtomicBool>, partition: EspDefaultNvsPartition, current_mode: String, camera_ready: Arc<AtomicBool>, armed: Arc<AtomicBool>) -> Result<Self> {
         // uri_match_wildcard debe estar ON para que el handler "/file/*" case con
         // rutas como "/file/IMG_1.JPG"; por defecto viene desactivado (404 en la SD).
         let conf = Configuration {
@@ -145,10 +145,14 @@ impl WebServer {
             }
             match capture_jpeg() {
                 Some(jpeg) => {
-                    // Nombre corto compatible con FAT 8.3 (LFN desactivado): "CAPnnnnn" (8 chars).
-                    // Deriva de los segundos de uptime (el RTC no está puesto).
-                    let secs = (unsafe { esp_idf_svc::sys::esp_timer_get_time() } / 1_000_000) % 100000;
-                    let path = format!("/sdcard/CAP{:05}.JPG", secs);
+                    // Nombre con fecha-hora si el reloj está puesto (LFN); si no, uptime corto.
+                    let path = match crate::storage::now_stamp() {
+                        Some(ts) => format!("/sdcard/{}.jpg", ts),
+                        None => {
+                            let secs = (unsafe { esp_idf_svc::sys::esp_timer_get_time() } / 1_000_000) % 100000;
+                            format!("/sdcard/CAP{:05}.jpg", secs)
+                        }
+                    };
                     let saved = fs::File::create(&path)
                         .and_then(|mut f| std::io::Write::write_all(&mut f, &jpeg));
                     match saved {
@@ -241,8 +245,10 @@ impl WebServer {
 
         let mode_clone = current_mode.clone();
         let motion_state_info = motion_state.clone();
+        let armed_info = armed.clone();
         server.fn_handler("/info", Method::Get, move |request| {
             let is_detecting = motion_state_info.load(Ordering::Relaxed);
+            let armed = armed_info.load(Ordering::Relaxed);
             // RSSI del enlace LR (dBm). 0 = sin enlace. Útil para calibrar el alcance.
             let (rssi, linked): (i32, bool) = unsafe {
                 let mut ap: esp_idf_sys::wifi_ap_record_t = std::mem::zeroed();

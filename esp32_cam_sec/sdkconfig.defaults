@@ -29,6 +29,11 @@ CONFIG_SPIRAM_IGNORE_NOTFOUND=y
 # en esp_camera_init). 32 KB da margen de sobra.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=32768
 
+# Nombres largos en la FAT (LFN) para poder nombrar clips/fotos con fecha-hora
+# (p.ej. 20260730-153201.avi). Sin esto la FAT es 8.3 (máx 8 chars, el bug del CLIP00001).
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255
+
 # FreeRTOS clock
 CONFIG_FREERTOS_HZ=1000
 CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y

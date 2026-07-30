@@ -89,3 +89,28 @@ impl Storage {
         Ok(())
     }
 }
+
+/// Devuelve una marca de tiempo "AAAAMMDD-HHMMSS" del reloj actual, o None si el RTC no está
+/// puesto todavía (la hora la fija el móvil por BLE). Requiere FATFS LFN activado para usarla
+/// como nombre de archivo. Usa gmtime: la app envía el epoch ya ajustado a hora local.
+pub fn now_stamp() -> Option<String> {
+    let now: esp_idf_sys::time_t = unsafe { esp_idf_sys::time(std::ptr::null_mut()) };
+    if (now as i64) < 1_600_000_000 {
+        return None; // reloj sin ajustar (antes de ~2020)
+    }
+    let mut tm: esp_idf_sys::tm = unsafe { std::mem::zeroed() };
+    unsafe { esp_idf_sys::gmtime_r(&now, &mut tm) };
+    let mut buf = [0u8; 24];
+    let n = unsafe {
+        esp_idf_sys::strftime(
+            buf.as_mut_ptr() as *mut core::ffi::c_char,
+            buf.len(),
+            c"%Y%m%d-%H%M%S".as_ptr(),
+            &tm,
+        )
+    };
+    if n == 0 {
+        return None;
+    }
+    std::str::from_utf8(&buf[..n]).ok().map(|s| s.to_string())
+}
