@@ -5,12 +5,18 @@ use ::log::{info, error};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AppConfig {
     pub mode: String, // "AP" or "STA"
+    /// Estado de la alarma. Persistido en NVS para sobrevivir al deep sleep:
+    /// `true` = armado (bajo consumo, graba por movimiento), `false` = desarmado (WiFi always-on).
+    /// `serde(default)` mantiene compatibilidad con configuraciones guardadas antes de este campo.
+    #[serde(default)]
+    pub alarm_armed: bool,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            mode: "STA".to_string(),
+            mode: "AP".to_string(),
+            alarm_armed: false,
         }
     }
 }

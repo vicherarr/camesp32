@@ -67,12 +67,19 @@ fun MainScreen(viewModel: MainViewModel) {
                         Text("CamESP32 S3", color = Color.White, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.width(12.dp))
                         // Status Badge Pill
+                        val badgeColor = when {
+                            uiState.isArmed -> Color(0xFFFF3B30)
+                            uiState.isCameraOnline -> EmeraldGreen
+                            else -> Color.Gray.copy(alpha = 0.6f)
+                        }
+                        val badgeText = when {
+                            uiState.isArmed -> "ARMADA"
+                            uiState.isCameraOnline -> "WIFI ONLINE"
+                            else -> "OFFLINE"
+                        }
                         Box(
                             modifier = Modifier
-                                .background(
-                                    color = if (uiState.isCameraOnline) EmeraldGreen else Color.Gray.copy(alpha = 0.6f),
-                                    shape = RoundedCornerShape(12.dp)
-                                )
+                                .background(color = badgeColor, shape = RoundedCornerShape(12.dp))
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -83,7 +90,7 @@ fun MainScreen(viewModel: MainViewModel) {
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (uiState.isCameraOnline) "WIFI ONLINE" else "OFFLINE",
+                                    text = badgeText,
                                     color = Color.White,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold
@@ -139,6 +146,8 @@ fun MainScreen(viewModel: MainViewModel) {
                     isCameraOnline = uiState.isCameraOnline,
                     currentCameraMode = uiState.currentCameraMode,
                     isMotionDetected = uiState.isMotionDetected,
+                    isArmed = uiState.isArmed,
+                    onSetArmed = { armed -> viewModel.setArmed(armed) },
                     onNavigateToLive = { viewModel.selectTab(1) }
                 )
                 1 -> LiveStreamScreen(

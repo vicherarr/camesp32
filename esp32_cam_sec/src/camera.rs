@@ -117,6 +117,14 @@ impl Camera {
         !self.is_mock
     }
 
+    /// Libera el driver de la cámara para reducir consumo antes de entrar en deep sleep.
+    pub fn deinit(&self) {
+        if !self.is_mock {
+            unsafe { esp_camera_deinit() };
+            info!("Camera deinitialized (pre-sleep power save)");
+        }
+    }
+
     /// Takes a picture and returns JPEG bytes (encoding in software if needed).
     pub fn take_picture(&self) -> Option<Vec<u8>> {
         if self.is_mock {

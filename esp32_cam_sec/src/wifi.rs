@@ -23,13 +23,13 @@ impl<'a> WifiManager<'a> {
         match mode {
             WifiMode::AP => {
                 let mut ap_config = AccessPointConfiguration::default();
-                ap_config.ssid = "ESP32-CAM-Seguridad".try_into().unwrap();
-                ap_config.password = "admin1234".try_into().unwrap();
+                ap_config.ssid = "MIWIFI".try_into().unwrap();
+                ap_config.password = "moto1112".try_into().unwrap();
                 ap_config.auth_method = AuthMethod::WPA2Personal;
                 ap_config.channel = 1;
-                
+
                 wifi.set_configuration(&Configuration::AccessPoint(ap_config))?;
-                info!("WiFi AP configured. SSID: ESP32-CAM-Seguridad");
+                info!("WiFi AP configured. SSID: MIWIFI");
             }
             WifiMode::STA => {
                 let mut client_config = ClientConfiguration::default();

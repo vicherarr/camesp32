@@ -8,9 +8,10 @@ rust-version = "1.77"
 
 [package.metadata.esp-idf-sys]
 extra_components = [
-    # esp32-camera comes from idf_component.yml (managed component). We only need
-    # esp-idf-sys to generate the Rust bindings module `camera_sys` from its header.
-    { bindings_header = "src/camera_bindings.h", bindings_module = "camera_sys" },
+    # esp32-camera (cámara DVP integrada GC0308). Declarado como remote_component para que el
+    # component manager de esp-idf-sys lo descargue: las versiones nuevas ya NO leen el
+    # idf_component.yml del proyecto, así que hay que pedirlo aquí. Genera el módulo `camera_sys`.
+    { remote_component = { name = "espressif/esp32-camera", version = "^2.0.11" }, bindings_header = "src/camera_bindings.h", bindings_module = "camera_sys" },
     { remote_component = { name = "espressif/usb_host_uvc", version = "2.5.1" }, bindings_header = "src/uvc_bindings.h", bindings_module = "uvc" },
 ]
 
@@ -33,6 +34,8 @@ anyhow = "1.0"
 embedded-hal = "1.0.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+# BLE (control): servidor GATT NimBLE. La media sigue por WiFi.
+esp32-nimble = "0.12"
 
 [build-dependencies]
 embuild = { version = "0.32", features = ["espidf"] }

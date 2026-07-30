@@ -1,8 +1,23 @@
-//! Status RGB LED (onboard WS2812 on GPIO48 of the Freenove ESP32-S3-WROOM board).
+//! LED de estado RGB de a bordo (WS2812 en GPIO48 de la Freenove ESP32-S3-WROOM).
 //!
-//! Driven with the RMT peripheral (no extra crates). One addressable LED, GRB order.
-//! Used to signal boot / WiFi / camera state so you can tell what the board is doing
-//! without a serial cable.
+//! Se controla con el periférico RMT (sin crates extra). Un solo LED direccionable, orden GRB.
+//!
+//! # Estados del sistema señalizados por el LED
+//!
+//! Cada estado del firmware tiene **un color y un patrón propios** para poder entender de un
+//! vistazo qué está haciendo la placa sin cable serie:
+//!
+//! | Estado         | Color        | Patrón            | Significado                                        |
+//! |----------------|--------------|-------------------|----------------------------------------------------|
+//! | `Booting`      | 🔴 rojo      | fijo              | Arrancando / inicializando periféricos             |
+//! | `Disarmed`     | 🟢 verde     | pulso lento       | Desarmado: WiFi activo, control total, NO graba    |
+//! | `ArmedWindow`  | 🔵 azul      | parpadeo          | Armado: ventana WiFi abierta, puedes DESARMAR      |
+//! | `Recording`    | 🟣 magenta   | fijo              | Grabando clip de vídeo por movimiento              |
+//! | `Sleeping`     | ⚫ apagado   | —                 | Deep sleep (bajo consumo); despierta por el sensor |
+//! | `Error`        | 🔴 rojo      | parpadeo rápido   | Fallo de cámara o SD                               |
+//!
+//! Los patrones con parpadeo/pulso usan el argumento `phase` de [`StatusLed::show`]: el bucle
+//! principal alterna ese booleano en cada tick, y el LED alterna brillo/encendido en consecuencia.
 
 use core::time::Duration;
 use anyhow::Result;
@@ -10,6 +25,23 @@ use esp_idf_hal::gpio::OutputPin;
 use esp_idf_hal::rmt::{
     config::TransmitConfig, FixedLengthSignal, PinState, Pulse, RmtChannel, TxRmtDriver,
 };
+
+/// Estado global del sistema que se representa en el LED de a bordo. Ver la tabla del módulo.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LedState {
+    /// Arrancando / inicializando (rojo fijo).
+    Booting,
+    /// Desarmado: WiFi always-on, control total desde la app, el movimiento no graba (verde, pulso).
+    Disarmed,
+    /// Armado con la ventana WiFi abierta: la app puede desarmar (azul, parpadeo).
+    ArmedWindow,
+    /// Grabando un clip de vídeo por evento de movimiento (magenta, fijo).
+    Recording,
+    /// A punto de dormir / dormido en deep sleep (apagado).
+    Sleeping,
+    /// Fallo de cámara/SD (rojo, parpadeo rápido).
+    Error,
+}
 
 pub struct StatusLed<'d> {
     tx: TxRmtDriver<'d>,
@@ -25,7 +57,7 @@ impl<'d> StatusLed<'d> {
         Ok(Self { tx })
     }
 
-    /// Send a single 24-bit color (WS2812 expects GRB order).
+    /// Envía un color de 24 bits (WS2812 espera orden GRB).
     pub fn set(&mut self, r: u8, g: u8, b: u8) -> Result<()> {
         let color: u32 = ((g as u32) << 16) | ((r as u32) << 8) | (b as u32);
         let hz = self.tx.counter_clock()?;
@@ -44,12 +76,32 @@ impl<'d> StatusLed<'d> {
         Ok(())
     }
 
-    pub fn off(&mut self)        -> Result<()> { self.set(0, 0, 0) }
-    pub fn blue(&mut self)       -> Result<()> { self.set(0, 0, 40) }   // arrancando
-    pub fn purple(&mut self)     -> Result<()> { self.set(30, 0, 30) }  // WiFi arrancando
-    pub fn cyan(&mut self)       -> Result<()> { self.set(0, 30, 30) }  // red lista
-    pub fn green(&mut self)      -> Result<()> { self.set(0, 40, 0) }   // camara OK / idle
-    pub fn green_dim(&mut self)  -> Result<()> { self.set(0, 5, 0) }    // latido idle
-    pub fn red(&mut self)        -> Result<()> { self.set(45, 0, 0) }   // fallo camara
-    pub fn white(&mut self)      -> Result<()> { self.set(50, 50, 50) } // captura de foto
+    /// Apaga el LED.
+    pub fn off(&mut self) -> Result<()> {
+        self.set(0, 0, 0)
+    }
+
+    /// Muestra el color/patrón correspondiente al estado del sistema.
+    ///
+    /// `phase` es un booleano que el bucle principal alterna en cada tick; los estados con
+    /// parpadeo/pulso lo usan para saber en qué mitad del ciclo están. Los estados fijos lo ignoran.
+    pub fn show(&mut self, state: LedState, phase: bool) -> Result<()> {
+        match state {
+            LedState::Booting => self.set(60, 0, 0), // 🔴 rojo fijo
+            LedState::Disarmed => {
+                // 🟢 pulso verde suave: alterna brillo para indicar "vivo y en control".
+                if phase { self.set(0, 60, 0) } else { self.set(0, 16, 0) }
+            }
+            LedState::ArmedWindow => {
+                // 🔵 azul parpadeante: ventana WiFi abierta, se puede desarmar.
+                if phase { self.set(0, 0, 70) } else { self.off() }
+            }
+            LedState::Recording => self.set(60, 0, 55), // 🟣 magenta fijo
+            LedState::Sleeping => self.off(),           // ⚫ apagado
+            LedState::Error => {
+                // 🔴 parpadeo rápido de aviso (el llamante debe alternar phase rápido).
+                if phase { self.set(80, 0, 0) } else { self.off() }
+            }
+        }
+    }
 }

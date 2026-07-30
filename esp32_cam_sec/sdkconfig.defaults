@@ -24,16 +24,16 @@ CONFIG_SPIRAM_SPEED_80M=y
 # lets BLE come up even when PSRAM/camera are absent or in a different mode)
 CONFIG_SPIRAM_IGNORE_NOTFOUND=y
 
+# Stack de la tarea main: el orquestador corre aquí esp_camera_init(), frame2jpg y el
+# grabador de vídeo, que usan mucha pila. El default (~3.5 KB) se desborda (stack overflow
+# en esp_camera_init). 32 KB da margen de sobra.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=32768
+
 # FreeRTOS clock
 CONFIG_FREERTOS_HZ=1000
 CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
 
-# USB Host (OTG) tuning for the UVC (isochronous MJPEG) camera
-# Bias the internal USB FIFO toward IN transfers (camera streams IN).
-CONFIG_USB_HOST_HW_BUFFER_BIAS_IN=y
-# Larger control transfers so full config descriptors fit in one go.
-CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=1024
-
-# Desactivar la consola USB JTAG para liberar los pines 19 y 20 para el USB Host
-CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
-CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=n
+# Consola por USB-Serial-JTAG (USB nativo, /dev/ttyACM0): la cámara es DVP (no USB host),
+# así que los pines 19/20 quedan libres para la consola. Permite ver logs y panics por el
+# USB nativo (antes iba por UART0 físico, no conectado).
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y

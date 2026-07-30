@@ -11,7 +11,12 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-data class CameraStatus(val isOnline: Boolean, val mode: String = "", val isMotionDetected: Boolean = false)
+data class CameraStatus(
+    val isOnline: Boolean,
+    val mode: String = "",
+    val isMotionDetected: Boolean = false,
+    val isArmed: Boolean = false
+)
 
 class CameraRepository {
 
@@ -63,7 +68,8 @@ class CameraRepository {
                 val json = JSONObject(body)
                 val mode = json.optString("mode", "")
                 val motion = json.optBoolean("motion", false)
-                CameraStatus(isOnline = true, mode = mode, isMotionDetected = motion)
+                val armed = json.optBoolean("armed", false)
+                CameraStatus(isOnline = true, mode = mode, isMotionDetected = motion, isArmed = armed)
             } else {
                 CameraStatus(isOnline = false)
             }
@@ -131,6 +137,26 @@ class CameraRepository {
 
             val response = client.newCall(request).execute()
             response.isSuccessful
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Arma o desarma la alarma (POST /arm o /disarm). El dispositivo guarda el estado en NVS y
+     * reinicia: al armar entra en bajo consumo (deep sleep), al desarmar vuelve a WiFi always-on.
+     */
+    suspend fun setArmed(baseUrl: String, user: String, pass: String, armed: Boolean): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val credential = Credentials.basic(user, pass)
+            val endpoint = if (armed) "/arm" else "/disarm"
+            val body = "".toRequestBody("application/json".toMediaTypeOrNull())
+            val request = Request.Builder()
+                .url("$baseUrl$endpoint")
+                .header("Authorization", credential)
+                .post(body)
+                .build()
+            client.newCall(request).execute().isSuccessful
         } catch (e: Exception) {
             false
         }

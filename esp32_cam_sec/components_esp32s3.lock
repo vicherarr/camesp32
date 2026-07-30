@@ -1,17 +1,59 @@
 dependencies:
   espressif/esp32-camera:
-    component_hash: 32c2687d321b623c67a1137c43bd6797d4747aaed4315f44b57b8ed869f3e681
-    dependencies: []
+    component_hash: bc9c8a6b51df777a014fa295825b3de5069bc0300c317acff20c97cf4a10ac7d
+    dependencies:
+    - name: espressif/esp_jpeg
+      registry_url: https://components.espressif.com
+      require: public
+      version: ^1.3.1
+    - name: idf
+      require: private
+      version: '>=5.1'
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 2.0.14
+    version: 2.1.7
+  espressif/esp_jpeg:
+    component_hash: defb83669293cbf86d0fa86b475ba5517aceed04ed70db435388c151ab37b5d7
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 1.3.1
+  espressif/usb_host_uvc:
+    component_hash: 3dde9c89980212de1e394a29d3fe782a2988a08fd2a16af34eee6f642aab6ebe
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    - name: espressif/usb
+      registry_url: https://components.espressif.com
+      require: public
+      rules:
+      - if: idf_version >=6.0
+      - if: target not in ["linux"]
+      version: ^1.0.0
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    targets:
+    - esp32s2
+    - esp32s3
+    - esp32p4
+    - esp32h4
+    - esp32s31
+    - linux
+    version: 2.5.1
   idf:
     source:
       type: idf
     version: 5.2.3
 direct_dependencies:
 - espressif/esp32-camera
-manifest_hash: 75ef7ebc12724636ffb160cdf1f1957b769208b045820232edacfec00673fc9d
+- espressif/usb_host_uvc
+manifest_hash: 9ff72334b82e42a298e52557d677aef544096606af390fdcb2ea2f204dd59d04
 target: esp32s3
 version: 2.0.0

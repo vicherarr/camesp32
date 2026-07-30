@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Photo
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -47,6 +48,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.vicherarr.camespdroid.model.MediaItem
@@ -146,11 +151,17 @@ fun GalleryScreen(
                     modifier = Modifier.weight(1f)
                 ) {
                     items(mediaList) { item ->
+                        val ctx = LocalContext.current
                         MediaCardItem(
                             item = item,
                             username = username,
                             password = password,
-                            onClick = { onSelectMedia(item) }
+                            // Los clips de vídeo (AVI-MJPEG) se abren en un reproductor externo
+                            // (VLC/MX Player); Coil solo decodifica imágenes.
+                            onClick = {
+                                if (item.isVideo) openVideoExternally(ctx, item.url)
+                                else onSelectMedia(item)
+                            }
                         )
                     }
                 }
@@ -250,21 +261,37 @@ fun MediaCardItem(
         colors = CardDefaults.cardColors(containerColor = SurfaceCard)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            val context = LocalContext.current
-            val imageRequest = remember(item.url, username, password) {
-                ImageRequest.Builder(context)
-                    .data(item.url)
-                    .addHeader("Authorization", Credentials.basic(username, password))
-                    .crossfade(true)
-                    .build()
+            if (item.isVideo) {
+                // Clip de vídeo: placeholder oscuro con icono de reproducción (no decodificable por Coil).
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF1B1B22)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayCircle,
+                        contentDescription = "Reproducir vídeo",
+                        tint = AccentCyan,
+                        modifier = Modifier.size(56.dp)
+                    )
+                }
+            } else {
+                val context = LocalContext.current
+                val imageRequest = remember(item.url, username, password) {
+                    ImageRequest.Builder(context)
+                        .data(item.url)
+                        .addHeader("Authorization", Credentials.basic(username, password))
+                        .crossfade(true)
+                        .build()
+                }
+                AsyncImage(
+                    model = imageRequest,
+                    contentDescription = item.filename,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
-
-            AsyncImage(
-                model = imageRequest,
-                contentDescription = item.filename,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
 
             Box(
                 modifier = Modifier
@@ -274,12 +301,29 @@ fun MediaCardItem(
                     .padding(8.dp)
             ) {
                 Text(
-                    text = item.filename,
+                    text = if (item.isVideo) "🎬 ${item.filename}" else item.filename,
                     color = Color.White,
                     fontSize = 11.sp,
                     maxLines = 1
                 )
             }
         }
+    }
+}
+
+/** Abre un clip de vídeo de la SD en un reproductor externo (VLC/MX Player) vía ACTION_VIEW. */
+private fun openVideoExternally(context: Context, url: String) {
+    try {
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(Uri.parse(url), "video/x-msvideo")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "Abrir vídeo con"))
+    } catch (e: Exception) {
+        Toast.makeText(
+            context,
+            "No hay reproductor de vídeo. Instala VLC o MX Player para ver los clips AVI.",
+            Toast.LENGTH_LONG
+        ).show()
     }
 }

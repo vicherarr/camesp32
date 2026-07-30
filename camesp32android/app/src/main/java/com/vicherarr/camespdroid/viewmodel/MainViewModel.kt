@@ -21,6 +21,7 @@ data class UiState(
     val isCameraOnline: Boolean = false,
     val currentCameraMode: String = "",
     val isMotionDetected: Boolean = false,
+    val isArmed: Boolean = false,
     val mediaList: List<MediaItem> = emptyList(),
     val isLoadingMedia: Boolean = false,
     val isLiveStreaming: Boolean = false,
@@ -82,6 +83,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Arma o desarma la alarma. Al armar, el dispositivo reinicia y entra en bajo consumo, por lo
+     * que dejará de responder por WiFi (solo abrirá una ventana tras cada evento de movimiento).
+     */
+    fun setArmed(armed: Boolean) {
+        viewModelScope.launch {
+            val ok = repository.setArmed(baseUrl, uiState.value.username, uiState.value.password, armed)
+            val msg = when {
+                ok && armed -> "Alarma ARMADA. El dispositivo entra en bajo consumo; grabará vídeo al detectar movimiento."
+                ok && !armed -> "Alarma DESARMADA. WiFi activo y control total."
+                else -> "No se pudo cambiar el estado de la alarma"
+            }
+            _uiState.value = _uiState.value.copy(
+                toastMessage = msg,
+                isArmed = if (ok) armed else uiState.value.isArmed
+            )
+        }
+    }
+
     fun deleteAllPhotos() {
         viewModelScope.launch {
             val success = repository.deleteAllPhotos(baseUrl, uiState.value.username, uiState.value.password)
@@ -118,7 +138,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.value = _uiState.value.copy(
                     isCameraOnline = status.isOnline,
                     currentCameraMode = status.mode,
-                    isMotionDetected = status.isMotionDetected
+                    isMotionDetected = status.isMotionDetected,
+                    // Solo actualizamos el estado de alarma cuando el dispositivo responde;
+                    // si está dormido (armado) mantenemos el último estado conocido.
+                    isArmed = if (status.isOnline) status.isArmed else _uiState.value.isArmed
                 )
                 delay(5000)
             }

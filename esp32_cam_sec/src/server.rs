@@ -48,8 +48,24 @@ fn capture_jpeg() -> Option<Vec<u8>> {
     }
 }
 
+/// Guarda el nuevo estado de alarma en NVS (preservando el modo WiFi) y reinicia para que el
+/// boot aplique la política de energía correspondiente (armado = deep sleep / desarmado = WiFi).
+fn set_armed_and_restart(partition: EspDefaultNvsPartition, armed: bool) {
+    let (mut cfg, mut nvs) = load_config(partition);
+    cfg.alarm_armed = armed;
+    if let Err(e) = save_config(&mut nvs, &cfg) {
+        ::log::error!("No se pudo guardar alarm_armed={}: {}", armed, e);
+        return;
+    }
+    ::log::info!("Alarma {} -> reiniciando para aplicar", if armed { "ARMADA" } else { "DESARMADA" });
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        unsafe { esp_idf_svc::sys::esp_restart() };
+    });
+}
+
 impl WebServer {
-    pub fn new(motion_state: Arc<AtomicBool>, partition: EspDefaultNvsPartition, current_mode: String, camera_ready: Arc<AtomicBool>) -> Result<Self> {
+    pub fn new(motion_state: Arc<AtomicBool>, partition: EspDefaultNvsPartition, current_mode: String, camera_ready: Arc<AtomicBool>, armed: bool) -> Result<Self> {
         // uri_match_wildcard debe estar ON para que el handler "/file/*" case con
         // rutas como "/file/IMG_1.JPG"; por defecto viene desactivado (404 en la SD).
         let conf = Configuration {
@@ -187,11 +203,18 @@ impl WebServer {
             let file_name = uri.trim_start_matches("/file/");
             let path = format!("/sdcard/{}", file_name);
             
+            // Content-Type según extensión: los clips de vídeo son AVI-MJPEG.
+            let lower = file_name.to_ascii_lowercase();
+            let content_type = if lower.ends_with(".avi") {
+                "video/x-msvideo"
+            } else {
+                "image/jpeg"
+            };
             if let Ok(mut file) = fs::File::open(&path) {
                 let mut response = request.into_response(
-                    200, 
-                    Some("OK"), 
-                    &[("Content-Type", "image/jpeg")]
+                    200,
+                    Some("OK"),
+                    &[("Content-Type", content_type)]
                 )?;
                 let mut buf = [0u8; 4096];
                 loop {
@@ -220,8 +243,20 @@ impl WebServer {
         let motion_state_info = motion_state.clone();
         server.fn_handler("/info", Method::Get, move |request| {
             let is_detecting = motion_state_info.load(Ordering::Relaxed);
+            // RSSI del enlace LR (dBm). 0 = sin enlace. Útil para calibrar el alcance.
+            let (rssi, linked): (i32, bool) = unsafe {
+                let mut ap: esp_idf_sys::wifi_ap_record_t = std::mem::zeroed();
+                if esp_idf_sys::esp_wifi_sta_get_ap_info(&mut ap) == esp_idf_sys::ESP_OK {
+                    (ap.rssi as i32, true)
+                } else {
+                    (0, false)
+                }
+            };
             let mut response = request.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
-            let json = format!("{{\"device\": \"ESP32-CAM\", \"mode\": \"{}\", \"motion\": {}}}", mode_clone, is_detecting);
+            let json = format!(
+                "{{\"device\": \"ESP32-CAM\", \"mode\": \"{}\", \"motion\": {}, \"rssi\": {}, \"linked\": {}, \"armed\": {}}}",
+                mode_clone, is_detecting, rssi, linked, armed
+            );
             response.write_all(json.as_bytes())?;
             Ok::<(), anyhow::Error>(())
         })?;
@@ -253,6 +288,25 @@ impl WebServer {
             Ok::<(), anyhow::Error>(())
         })?;
         
+        // Arma la alarma: guarda NVS(armed=true) y reinicia -> el dispositivo pasa a bajo
+        // consumo (deep sleep) y solo despierta/graba por movimiento.
+        let arm_partition = partition.clone();
+        server.fn_handler("/arm", Method::Post, move |request| {
+            let mut response = request.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
+            response.write_all(b"{\"status\":\"ok\",\"armed\":true}")?;
+            set_armed_and_restart(arm_partition.clone(), true);
+            Ok::<(), anyhow::Error>(())
+        })?;
+
+        // Desarma la alarma: guarda NVS(armed=false) y reinicia -> WiFi always-on, sin grabar.
+        let disarm_partition = partition.clone();
+        server.fn_handler("/disarm", Method::Post, move |request| {
+            let mut response = request.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
+            response.write_all(b"{\"status\":\"ok\",\"armed\":false}")?;
+            set_armed_and_restart(disarm_partition.clone(), false);
+            Ok::<(), anyhow::Error>(())
+        })?;
+
         #[derive(Deserialize)]
         struct ConfigReq {
             mode: String,
@@ -265,8 +319,9 @@ impl WebServer {
             if bytes_read > 0 {
                 let json_str = std::str::from_utf8(&buf[..bytes_read]).unwrap_or("");
                 if let Ok(req) = serde_json::from_str::<ConfigReq>(json_str) {
-                    let new_config = AppConfig { mode: req.mode };
-                    let (_, mut nvs) = load_config(partition.clone());
+                    let (cur, mut nvs) = load_config(partition.clone());
+                    // Preservar el estado de alarma al cambiar solo el modo de red.
+                    let new_config = AppConfig { mode: req.mode, alarm_armed: cur.alarm_armed };
                     if let Ok(_) = save_config(&mut nvs, &new_config) {
                         let mut response = request.into_response(200, Some("OK"), &[])?;
                         response.write_all(b"{\"status\":\"ok\"}")?;
