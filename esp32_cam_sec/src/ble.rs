@@ -4,7 +4,8 @@
 //! ligero: armar/desarmar, estado (armado/movimiento/wifi), poner la hora y encender/apagar WiFi.
 //! Está siempre disponible en proximidad (la moto aparcada) con muy bajo consumo.
 
-use std::sync::{Arc, Mutex as StdMutex, atomic::{AtomicU8, Ordering}};
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex as StdMutex};
 use esp32_nimble::{BLEDevice, BLEAdvertisementData, BLECharacteristic, NimbleProperties, uuid128};
 use esp32_nimble::utilities::{BleUuid, mutex::Mutex};
 use ::log::info;
@@ -21,13 +22,11 @@ pub const CMD_WIFI_ON: u8 = 0x02;
 pub const CMD_WIFI_OFF: u8 = 0x03;
 pub const CMD_SET_TIME: u8 = 0x04; // seguido de 8 bytes: epoch en ms (little-endian)
 
-const CMD_NONE: u8 = 0xFF;
-
 /// Control BLE: mantiene el servidor GATT y expone al `main` los comandos recibidos y la
 /// actualización de estado (con notify).
 pub struct BleControl {
-    /// Último comando recibido (CMD_NONE = ninguno). El main lo consume con `take_command`.
-    last_cmd: Arc<AtomicU8>,
+    /// Cola FIFO de comandos recibidos (para no perder comandos enviados en ráfaga).
+    cmd_queue: Arc<StdMutex<VecDeque<u8>>>,
     /// Epoch en ms recibido con CMD_SET_TIME (0 = no recibido). (El S3 no tiene AtomicU64.)
     set_time_ms: Arc<StdMutex<u64>>,
     state_char: Arc<Mutex<BLECharacteristic>>,
@@ -36,7 +35,7 @@ pub struct BleControl {
 impl BleControl {
     /// Arranca el stack BLE, crea el servicio/características y empieza a anunciarse como "CAMSEC".
     pub fn start(initial_armed: bool) -> Self {
-        let last_cmd = Arc::new(AtomicU8::new(CMD_NONE));
+        let cmd_queue = Arc::new(StdMutex::new(VecDeque::<u8>::new()));
         let set_time_ms = Arc::new(StdMutex::new(0u64));
 
         let device = BLEDevice::take();
@@ -57,7 +56,7 @@ impl BleControl {
         let cmd_char = service
             .lock()
             .create_characteristic(CMD_UUID, NimbleProperties::WRITE);
-        let lc = last_cmd.clone();
+        let cq = cmd_queue.clone();
         let st = set_time_ms.clone();
         cmd_char.lock().on_write(move |args| {
             let data = args.recv_data();
@@ -69,7 +68,9 @@ impl BleControl {
                         *g = u64::from_le_bytes(ms);
                     }
                 }
-                lc.store(code, Ordering::SeqCst);
+                if let Ok(mut q) = cq.lock() {
+                    q.push_back(code);
+                }
                 info!("BLE: comando recibido 0x{:02x}", code);
             }
         });
@@ -87,13 +88,18 @@ impl BleControl {
 
         info!("BLE: anunciando como 'CAMSEC' (servicio Alarm Control)");
 
-        Self { last_cmd, set_time_ms, state_char }
+        Self { cmd_queue, set_time_ms, state_char }
     }
 
-    /// Devuelve y consume el último comando recibido por BLE, o None.
+    /// Devuelve y consume el siguiente comando de la cola (FIFO), o None.
     pub fn take_command(&self) -> Option<u8> {
-        let c = self.last_cmd.swap(CMD_NONE, Ordering::SeqCst);
-        if c == CMD_NONE { None } else { Some(c) }
+        self.cmd_queue.lock().ok()?.pop_front()
+    }
+
+    /// True si hay un comando `code` pendiente en la cola (sin consumirlo). Útil para abortar
+    /// una grabación en curso cuando llega un DESARMAR.
+    pub fn has_pending(&self, code: u8) -> bool {
+        self.cmd_queue.lock().map(|q| q.contains(&code)).unwrap_or(false)
     }
 
     /// Epoch en ms recibido por CMD_SET_TIME (y lo consume), o None.
