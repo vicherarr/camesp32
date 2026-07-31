@@ -118,14 +118,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(armed = false, toastMessage = "Alarma desarmada")
     }
 
+    private var mediaJob: Job? = null
+
     // ---- Sesión de media (WiFi bajo demanda) ----
     fun openMediaSession() {
         if (_uiState.value.mediaSession == MediaSession.Active ||
             _uiState.value.mediaSession == MediaSession.Opening) return
+        mediaJob?.cancel()
         _uiState.value = _uiState.value.copy(mediaSession = MediaSession.Opening, toastMessage = "Encendiendo WiFi de la cámara…")
         // 1) Pide a la cámara que levante su AP (por BLE). La cámara apagará BLE.
         ble.wifiOn()
-        viewModelScope.launch {
+        mediaJob = viewModelScope.launch {
             delay(2500) // deja que la cámara deinit BLE y levante el AP
             ble.disconnect()
             // 2) Enlaza el móvil al AP de forma local (sin cambiar la red del teléfono).
@@ -133,7 +136,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 viewModelScope.launch {
                     if (ok) {
                         _uiState.value = _uiState.value.copy(mediaSession = MediaSession.Active, deviceWifiOn = true)
-                        refreshMediaList()
+                        // Según la pestaña seleccionada, arrancamos fotos o vivo
+                        if (_uiState.value.selectedTab == 2) refreshMediaList()
+                        else if (_uiState.value.selectedTab == 1) startLiveSnapshots()
                     } else {
                         _uiState.value = _uiState.value.copy(
                             mediaSession = MediaSession.Error,
@@ -147,8 +152,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun closeMediaSession() {
         if (_uiState.value.mediaSession == MediaSession.Closing) return
+        mediaJob?.cancel()
         stopLiveSnapshots()
-        viewModelScope.launch {
+        mediaJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(mediaSession = MediaSession.Closing, toastMessage = "Cerrando WiFi de la cámara…")
             // Pide a la cámara cerrar WiFi y volver a BLE, suelta el enlace y reconecta BLE.
             repo.requestWifiOff(wifiLink.httpClient(), BASE_URL)

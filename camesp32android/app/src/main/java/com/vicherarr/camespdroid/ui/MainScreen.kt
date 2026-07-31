@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -173,28 +174,34 @@ fun MainScreen(viewModel: MainViewModel) {
                 }
                 3 -> SettingsScreen(uiState = uiState)
             }
-        }
-    }
-    
-    // Dialog de progreso general para cambios de conexión
-    if (uiState.mediaSession == MediaSession.Opening || uiState.mediaSession == MediaSession.Closing) {
-        Dialog(onDismissRequest = { /* No cancelable */ }) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = SurfaceDark
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+
+            // Progress overlay general para cambios de conexión (sobre el contenido, sin bloquear tabs)
+            if (uiState.mediaSession == MediaSession.Opening || uiState.mediaSession == MediaSession.Closing) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .clickable(enabled = false) {}, // Block clicks to underlying content
+                    contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator(color = AccentCyan)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = if (uiState.mediaSession == MediaSession.Opening) "Conectando WiFi de la cámara..." else "Cerrando WiFi y volviendo a BLE...",
-                        color = Color.White,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = SurfaceDark
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            CircularProgressIndicator(color = AccentCyan)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = if (uiState.mediaSession == MediaSession.Opening) "Conectando WiFi de la cámara..." else "Cerrando WiFi y volviendo a BLE...",
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
                 }
             }
         }
