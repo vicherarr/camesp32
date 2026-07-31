@@ -1,11 +1,13 @@
 package com.vicherarr.camespdroid.viewmodel
 
 import android.app.Application
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.vicherarr.camespdroid.ble.BleManager
+import com.vicherarr.camespdroid.ble.BleStatus
 import com.vicherarr.camespdroid.model.MediaItem
 import com.vicherarr.camespdroid.network.CameraRepository
+import com.vicherarr.camespdroid.network.WifiLink
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,149 +15,209 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/** Estado de la sesión de media por WiFi. */
+enum class MediaSession { None, Opening, Active, Error }
+
 data class UiState(
-    val ipAddress: String = "192.168.1.220",
-    val httpPort: String = "80",
-    val username: String = "admin",
-    val password: String = "admin123",
-    val isCameraOnline: Boolean = false,
-    val currentCameraMode: String = "",
-    val isMotionDetected: Boolean = false,
-    val isArmed: Boolean = false,
+    val bleConnected: Boolean = false,
+    val bleScanning: Boolean = false,
+    val bleError: String? = null,
+    val armed: Boolean = false,
+    val motion: Boolean = false,
+    val deviceWifiOn: Boolean = false,
+    val mediaSession: MediaSession = MediaSession.None,
     val mediaList: List<MediaItem> = emptyList(),
     val isLoadingMedia: Boolean = false,
-    val isLiveStreaming: Boolean = false,
+    val snapshot: ByteArray? = null,
     val selectedMedia: MediaItem? = null,
-    val selectedTab: Int = 0, // 0: Control, 1: Live, 2: Gallery, 3: Settings
-    val toastMessage: String? = null
+    val selectedClipBytes: ByteArray? = null,
+    val loadingClip: Boolean = false,
+    val selectedTab: Int = 0, // 0 Inicio, 1 En Vivo, 2 Galería, 3 Ajustes
+    val toastMessage: String? = null,
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = CameraRepository()
+    companion object {
+        const val AP_SSID = "MIWIFI"
+        const val AP_PASS = "moto1112"
+        const val BASE_URL = CameraRepository.DEFAULT_BASE_URL
+    }
+
+    private val ble = BleManager(application)
+    private val wifiLink = WifiLink(application)
+    private val repo = CameraRepository()
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
-    private var pingJob: Job? = null
+    private var snapshotJob: Job? = null
 
     init {
-        startPingLoop()
-    }
-
-    val baseUrl: String
-        get() = "http://${uiState.value.ipAddress}:${uiState.value.httpPort}"
-
-    fun selectTab(index: Int) {
-        _uiState.value = _uiState.value.copy(selectedTab = index)
-        if (index == 1 || index == 2) {
-            refreshMediaList()
+        viewModelScope.launch {
+            ble.status.collect { st -> onBleStatus(st) }
         }
     }
 
-    fun updateSettings(ip: String, port: String, user: String, pass: String) {
-        _uiState.value = _uiState.value.copy(
-            ipAddress = ip,
-            httpPort = port,
-            username = user,
-            password = pass
-        )
-        refreshMediaList()
+    /** La UI llama a esto una vez concedidos los permisos de Bluetooth. */
+    fun connectBle() {
+        if (_uiState.value.mediaSession != MediaSession.None) return
+        ble.startScanAndConnect()
     }
 
+    private fun onBleStatus(st: BleStatus) {
+        when (st) {
+            is BleStatus.Scanning -> _uiState.value = _uiState.value.copy(bleScanning = true, bleConnected = false, bleError = null)
+            is BleStatus.Connecting -> _uiState.value = _uiState.value.copy(bleScanning = true, bleConnected = false)
+            is BleStatus.Connected -> {
+                val first = !_uiState.value.bleConnected
+                _uiState.value = _uiState.value.copy(
+                    bleScanning = false, bleConnected = true, bleError = null,
+                    armed = st.state.armed, motion = st.state.motion, deviceWifiOn = st.state.wifiOn
+                )
+                // Al conectar por primera vez, sincroniza la hora (epoch local en ms).
+                if (first) {
+                    val offset = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis())
+                    ble.setTime(System.currentTimeMillis() + offset)
+                }
+            }
+            is BleStatus.Disconnected -> _uiState.value = _uiState.value.copy(bleScanning = false, bleConnected = false)
+            is BleStatus.Error -> _uiState.value = _uiState.value.copy(bleScanning = false, bleError = st.msg)
+            is BleStatus.Idle -> {}
+        }
+    }
+
+    // ---- Control de alarma (BLE) ----
+    fun arm() {
+        ble.arm()
+        _uiState.value = _uiState.value.copy(armed = true, toastMessage = "Alarma armada")
+    }
+
+    fun disarm() {
+        ble.disarm()
+        _uiState.value = _uiState.value.copy(armed = false, toastMessage = "Alarma desarmada")
+    }
+
+    // ---- Sesión de media (WiFi bajo demanda) ----
+    fun openMediaSession() {
+        if (_uiState.value.mediaSession == MediaSession.Active ||
+            _uiState.value.mediaSession == MediaSession.Opening) return
+        _uiState.value = _uiState.value.copy(mediaSession = MediaSession.Opening, toastMessage = "Encendiendo WiFi de la cámara…")
+        // 1) Pide a la cámara que levante su AP (por BLE). La cámara apagará BLE.
+        ble.wifiOn()
+        viewModelScope.launch {
+            delay(2500) // deja que la cámara deinit BLE y levante el AP
+            ble.disconnect()
+            // 2) Enlaza el móvil al AP de forma local (sin cambiar la red del teléfono).
+            wifiLink.connect(AP_SSID, AP_PASS) { ok ->
+                viewModelScope.launch {
+                    if (ok) {
+                        _uiState.value = _uiState.value.copy(mediaSession = MediaSession.Active, deviceWifiOn = true)
+                        refreshMediaList()
+                    } else {
+                        _uiState.value = _uiState.value.copy(
+                            mediaSession = MediaSession.Error,
+                            toastMessage = "No se pudo enlazar al WiFi de la cámara"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun closeMediaSession() {
+        stopLiveSnapshots()
+        viewModelScope.launch {
+            // Pide a la cámara cerrar WiFi y volver a BLE, suelta el enlace y reconecta BLE.
+            repo.requestWifiOff(wifiLink.httpClient(), BASE_URL)
+            wifiLink.release()
+            _uiState.value = _uiState.value.copy(
+                mediaSession = MediaSession.None, deviceWifiOn = false,
+                snapshot = null, selectedClipBytes = null, selectedMedia = null
+            )
+            delay(1500)
+            ble.startScanAndConnect()
+        }
+    }
+
+    // ---- Galería ----
     fun refreshMediaList() {
+        if (_uiState.value.mediaSession != MediaSession.Active) return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoadingMedia = true)
-            val list = repository.fetchMediaList(baseUrl, uiState.value.username, uiState.value.password)
+            val list = repo.fetchMediaList(wifiLink.httpClient(), BASE_URL)
             _uiState.value = _uiState.value.copy(mediaList = list, isLoadingMedia = false)
         }
     }
 
     fun triggerPhotoCapture() {
         viewModelScope.launch {
-            val success = repository.triggerCapture(baseUrl, uiState.value.username, uiState.value.password)
-            if (success) {
-                _uiState.value = _uiState.value.copy(toastMessage = "¡Foto capturada con éxito!")
-                refreshMediaList()
-            } else {
-                _uiState.value = _uiState.value.copy(toastMessage = "Error al capturar foto")
-            }
-        }
-    }
-
-    /**
-     * Arma o desarma la alarma. Al armar, el dispositivo reinicia y entra en bajo consumo, por lo
-     * que dejará de responder por WiFi (solo abrirá una ventana tras cada evento de movimiento).
-     */
-    fun setArmed(armed: Boolean) {
-        viewModelScope.launch {
-            val ok = repository.setArmed(baseUrl, uiState.value.username, uiState.value.password, armed)
-            val msg = when {
-                ok && armed -> "Alarma ARMADA. El dispositivo entra en bajo consumo; grabará vídeo al detectar movimiento."
-                ok && !armed -> "Alarma DESARMADA. WiFi activo y control total."
-                else -> "No se pudo cambiar el estado de la alarma"
-            }
-            _uiState.value = _uiState.value.copy(
-                toastMessage = msg,
-                isArmed = if (ok) armed else uiState.value.isArmed
-            )
+            val ok = repo.triggerCapture(wifiLink.httpClient(), BASE_URL)
+            _uiState.value = _uiState.value.copy(toastMessage = if (ok) "¡Foto capturada!" else "Error al capturar")
+            if (ok) refreshMediaList()
         }
     }
 
     fun deleteAllPhotos() {
         viewModelScope.launch {
-            val success = repository.deleteAllPhotos(baseUrl, uiState.value.username, uiState.value.password)
-            if (success) {
-                _uiState.value = _uiState.value.copy(toastMessage = "Fotos de la SD borradas", mediaList = emptyList())
-                refreshMediaList()
-            } else {
-                _uiState.value = _uiState.value.copy(toastMessage = "Error al borrar las fotos")
+            val ok = repo.deleteAllPhotos(wifiLink.httpClient(), BASE_URL)
+            _uiState.value = _uiState.value.copy(
+                toastMessage = if (ok) "SD borrada" else "Error al borrar",
+                mediaList = if (ok) emptyList() else _uiState.value.mediaList
+            )
+        }
+    }
+
+    fun selectMedia(item: MediaItem?) {
+        _uiState.value = _uiState.value.copy(selectedMedia = item, selectedClipBytes = null)
+        if (item != null && item.isVideo) {
+            viewModelScope.launch {
+                _uiState.value = _uiState.value.copy(loadingClip = true)
+                val bytes = repo.downloadFile(wifiLink.httpClient(), item.url)
+                _uiState.value = _uiState.value.copy(selectedClipBytes = bytes, loadingClip = false)
             }
         }
     }
 
-    fun selectMediaItem(item: MediaItem?) {
-        _uiState.value = _uiState.value.copy(selectedMedia = item)
+    // ---- Visor En Vivo (snapshots) ----
+    fun startLiveSnapshots() {
+        if (_uiState.value.mediaSession != MediaSession.Active) return
+        if (snapshotJob?.isActive == true) return
+        snapshotJob = viewModelScope.launch {
+            while (true) {
+                val bytes = repo.fetchSnapshot(wifiLink.httpClient(), BASE_URL)
+                if (bytes != null) _uiState.value = _uiState.value.copy(snapshot = bytes)
+                delay(400)
+            }
+        }
+    }
+
+    fun stopLiveSnapshots() {
+        snapshotJob?.cancel()
+        snapshotJob = null
+    }
+
+    fun selectTab(index: Int) {
+        _uiState.value = _uiState.value.copy(selectedTab = index)
+        if (index != 1) stopLiveSnapshots()
+        if (index == 2) refreshMediaList()
     }
 
     fun clearToast() {
         _uiState.value = _uiState.value.copy(toastMessage = null)
     }
 
-    private fun startPingLoop() {
-        pingJob?.cancel()
-        pingJob = viewModelScope.launch {
-            while (true) {
-                if (!uiState.value.isCameraOnline) {
-                    val discoveredIp = repository.discoverCameraIP()
-                    if (discoveredIp != null && discoveredIp != uiState.value.ipAddress) {
-                        _uiState.value = _uiState.value.copy(ipAddress = discoveredIp)
-                    }
-                }
-
-                val currentBaseUrl = "http://${uiState.value.ipAddress}:${uiState.value.httpPort}"
-                val status = repository.pingCamera(currentBaseUrl, uiState.value.username, uiState.value.password)
-                _uiState.value = _uiState.value.copy(
-                    isCameraOnline = status.isOnline,
-                    currentCameraMode = status.mode,
-                    isMotionDetected = status.isMotionDetected,
-                    // Solo actualizamos el estado de alarma cuando el dispositivo responde;
-                    // si está dormido (armado) mantenemos el último estado conocido.
-                    isArmed = if (status.isOnline) status.isArmed else _uiState.value.isArmed
-                )
-                delay(5000)
-            }
-        }
+    override fun onCleared() {
+        super.onCleared()
+        stopLiveSnapshots()
+        wifiLink.release()
+        ble.disconnect()
     }
 
-    fun sendEspConfig(mode: String, ssid: String, wifiPass: String) {
-        viewModelScope.launch {
-            val success = repository.sendEspConfig(baseUrl, uiState.value.username, uiState.value.password, mode, ssid, wifiPass)
-            if (success) {
-                _uiState.value = _uiState.value.copy(toastMessage = "Configuración enviada al ESP32 con éxito")
-            } else {
-                _uiState.value = _uiState.value.copy(toastMessage = "Error al enviar configuración al ESP32")
-            }
-        }
+    // Cliente enrutado por el enlace local, para que Coil (galería) cargue imágenes por el AP.
+    fun boundImageLoader(context: android.content.Context): coil.ImageLoader {
+        val client = wifiLink.httpClient()
+        val builder = coil.ImageLoader.Builder(context)
+        return if (client != null) builder.okHttpClient(client).build() else builder.build()
     }
 }

@@ -3,199 +3,102 @@ package com.vicherarr.camespdroid.network
 import com.vicherarr.camespdroid.model.MediaItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.Credentials
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-data class CameraStatus(
-    val isOnline: Boolean,
-    val mode: String = "",
-    val isMotionDetected: Boolean = false,
-    val isArmed: Boolean = false
-)
-
+/**
+ * Cliente HTTP de la media de la cámara. Todas las llamadas se hacen durante una **sesión WiFi**
+ * (la cámara ha levantado su AP tras el comando BLE), usando el cliente enrutado por el enlace
+ * local ([com.vicherarr.camespdroid.network.WifiLink]). En modo AP la IP es fija: 192.168.71.1.
+ */
 class CameraRepository {
 
-    suspend fun discoverCameraIP(): String? = withContext(Dispatchers.IO) {
-        var socket: java.net.DatagramSocket? = null
-        try {
-            socket = java.net.DatagramSocket()
-            socket.broadcast = true
-            val sendData = "DISCOVER_CAMESP32".toByteArray()
-            val sendPacket = java.net.DatagramPacket(
-                sendData, sendData.size,
-                java.net.InetAddress.getByName("255.255.255.255"), 5555
-            )
-            socket.send(sendPacket)
-
-            socket.soTimeout = 2000
-            val recvBuf = ByteArray(1024)
-            val receivePacket = java.net.DatagramPacket(recvBuf, recvBuf.size)
-            socket.receive(receivePacket)
-
-            val msg = String(receivePacket.data, 0, receivePacket.length)
-            if (msg.trim() == "CAMESP32_HERE") {
-                return@withContext receivePacket.address.hostAddress
-            }
-        } catch (e: Exception) {
-            // timeout or error
-        } finally {
-            socket?.close()
-        }
-        null
+    companion object {
+        const val DEFAULT_BASE_URL = "http://192.168.71.1"
     }
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(4, TimeUnit.SECONDS)
-        .readTimeout(6, TimeUnit.SECONDS)
+    /** Cliente de reserva (por si no hay enlace local); normalmente se pasa el de WifiLink. */
+    private val fallback: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
         .build()
 
-    suspend fun pingCamera(baseUrl: String, user: String, pass: String): CameraStatus = withContext(Dispatchers.IO) {
+    private fun http(client: OkHttpClient?) = client ?: fallback
+
+    suspend fun fetchMediaList(client: OkHttpClient?, baseUrl: String): List<MediaItem> = withContext(Dispatchers.IO) {
         try {
-            val credential = Credentials.basic(user, pass)
-            val request = Request.Builder()
-                .url("$baseUrl/info")
-                .header("Authorization", credential)
-                .build()
-
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                val body = response.body?.string() ?: ""
-                val json = JSONObject(body)
-                val mode = json.optString("mode", "")
-                val motion = json.optBoolean("motion", false)
-                val armed = json.optBoolean("armed", false)
-                CameraStatus(isOnline = true, mode = mode, isMotionDetected = motion, isArmed = armed)
-            } else {
-                CameraStatus(isOnline = false)
-            }
-        } catch (e: Exception) {
-            CameraStatus(isOnline = false)
-        }
-    }
-
-    suspend fun fetchMediaList(baseUrl: String, user: String, pass: String): List<MediaItem> = withContext(Dispatchers.IO) {
-        try {
-            val credential = Credentials.basic(user, pass)
-            val request = Request.Builder()
-                .url("$baseUrl/photos")
-                .header("Authorization", credential)
-                .build()
-
-            val response = client.newCall(request).execute()
+            val request = Request.Builder().url("$baseUrl/photos").build()
+            val response = http(client).newCall(request).execute()
             if (!response.isSuccessful) return@withContext emptyList()
-
             val body = response.body?.string() ?: ""
-            // Parse HTML directory listing
             val items = mutableListOf<MediaItem>()
             val hrefRegex = Regex("href=[\"'](/file/[^\"']+\\.(?:jpg|jpeg|png|mp4|avi))[\"']", RegexOption.IGNORE_CASE)
             var index = 0
             hrefRegex.findAll(body).forEach { match ->
                 val uriPath = match.groupValues[1]
-                val fullUrl = "$baseUrl$uriPath"
-                val filename = uriPath.removePrefix("/file/")
                 items.add(
                     MediaItem(
                         id = "media_${index++}",
-                        filename = filename,
-                        url = fullUrl
+                        filename = uriPath.removePrefix("/file/"),
+                        url = "$baseUrl$uriPath"
                     )
                 )
             }
-            items
+            items.sortedByDescending { it.filename } // más recientes primero (nombres con fecha-hora)
         } catch (e: Exception) {
             emptyList()
         }
     }
 
-    /** Descarga un fotograma JPEG de /photo (para la vista En Vivo por snapshots). */
-    suspend fun fetchSnapshot(baseUrl: String, user: String, pass: String): ByteArray? = withContext(Dispatchers.IO) {
+    /** Descarga un fotograma JPEG de /photo (visor En Vivo por snapshots). */
+    suspend fun fetchSnapshot(client: OkHttpClient?, baseUrl: String): ByteArray? = withContext(Dispatchers.IO) {
         try {
-            val credential = Credentials.basic(user, pass)
-            val request = Request.Builder()
-                .url("$baseUrl/photo")
-                .header("Authorization", credential)
-                .build()
-            val response = client.newCall(request).execute()
+            val request = Request.Builder().url("$baseUrl/photo").build()
+            val response = http(client).newCall(request).execute()
             if (response.isSuccessful) response.body?.bytes() else null
         } catch (e: Exception) {
             null
         }
     }
 
-    suspend fun triggerCapture(baseUrl: String, user: String, pass: String): Boolean = withContext(Dispatchers.IO) {
+    /** Descarga un archivo cualquiera de la SD (para el reproductor de vídeo AVI). */
+    suspend fun downloadFile(client: OkHttpClient?, url: String): ByteArray? = withContext(Dispatchers.IO) {
         try {
-            val credential = Credentials.basic(user, pass)
-            val request = Request.Builder()
-                .url("$baseUrl/capture")
-                .header("Authorization", credential)
-                .build()
+            val request = Request.Builder().url(url).build()
+            val response = http(client).newCall(request).execute()
+            if (response.isSuccessful) response.body?.bytes() else null
+        } catch (e: Exception) {
+            null
+        }
+    }
 
-            val response = client.newCall(request).execute()
-            response.isSuccessful
+    suspend fun triggerCapture(client: OkHttpClient?, baseUrl: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder().url("$baseUrl/capture").build()
+            http(client).newCall(request).execute().isSuccessful
         } catch (e: Exception) {
             false
         }
     }
 
-    /**
-     * Arma o desarma la alarma (POST /arm o /disarm). El dispositivo guarda el estado en NVS y
-     * reinicia: al armar entra en bajo consumo (deep sleep), al desarmar vuelve a WiFi always-on.
-     */
-    suspend fun setArmed(baseUrl: String, user: String, pass: String, armed: Boolean): Boolean = withContext(Dispatchers.IO) {
+    suspend fun deleteAllPhotos(client: OkHttpClient?, baseUrl: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            val credential = Credentials.basic(user, pass)
-            val endpoint = if (armed) "/arm" else "/disarm"
-            val body = "".toRequestBody("application/json".toMediaTypeOrNull())
-            val request = Request.Builder()
-                .url("$baseUrl$endpoint")
-                .header("Authorization", credential)
-                .post(body)
-                .build()
-            client.newCall(request).execute().isSuccessful
+            val body = "".toRequestBody(null)
+            val request = Request.Builder().url("$baseUrl/deleteall").post(body).build()
+            http(client).newCall(request).execute().isSuccessful
         } catch (e: Exception) {
             false
         }
     }
 
-    /** Borra TODAS las fotos de la SD del dispositivo (POST /deleteall). */
-    suspend fun deleteAllPhotos(baseUrl: String, user: String, pass: String): Boolean = withContext(Dispatchers.IO) {
+    /** Pide a la cámara cerrar la sesión WiFi y volver a BLE (POST /wifi_off). */
+    suspend fun requestWifiOff(client: OkHttpClient?, baseUrl: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            val credential = Credentials.basic(user, pass)
-            val body = "".toRequestBody("application/json".toMediaTypeOrNull())
-            val request = Request.Builder()
-                .url("$baseUrl/deleteall")
-                .header("Authorization", credential)
-                .post(body)
-                .build()
-            val response = client.newCall(request).execute()
-            response.isSuccessful
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    suspend fun sendEspConfig(baseUrl: String, user: String, pass: String, mode: String, ssid: String, wifiPass: String): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val credential = Credentials.basic(user, pass)
-            val json = JSONObject()
-            json.put("mode", mode)
-            // ssid and wifiPass are ignored now
-
-            val body = json.toString().toRequestBody("application/json".toMediaTypeOrNull())
-            
-            val request = Request.Builder()
-                .url("$baseUrl/config")
-                .header("Authorization", credential)
-                .post(body)
-                .build()
-
-            val response = client.newCall(request).execute()
-            response.isSuccessful
+            val body = "".toRequestBody(null)
+            val request = Request.Builder().url("$baseUrl/wifi_off").post(body).build()
+            http(client).newCall(request).execute().isSuccessful
         } catch (e: Exception) {
             false
         }

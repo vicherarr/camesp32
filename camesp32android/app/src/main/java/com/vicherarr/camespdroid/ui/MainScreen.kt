@@ -1,6 +1,10 @@
 package com.vicherarr.camespdroid.ui
 
+import android.Manifest
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -45,6 +49,7 @@ import com.vicherarr.camespdroid.ui.theme.DarkBg
 import com.vicherarr.camespdroid.ui.theme.EmeraldGreen
 import com.vicherarr.camespdroid.ui.theme.SurfaceDark
 import com.vicherarr.camespdroid.viewmodel.MainViewModel
+import com.vicherarr.camespdroid.viewmodel.MediaSession
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,11 +57,38 @@ fun MainScreen(viewModel: MainViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
+    // Permisos BLE (Android 12+: SCAN/CONNECT; anteriores: ubicación).
+    val blePerms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+    } else {
+        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+    }
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        if (result.values.all { it }) viewModel.connectBle()
+        else Toast.makeText(context, "Se necesitan permisos de Bluetooth", Toast.LENGTH_LONG).show()
+    }
+    LaunchedEffect(Unit) { permLauncher.launch(blePerms) }
+
     LaunchedEffect(uiState.toastMessage) {
-        uiState.toastMessage?.let { msg ->
-            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        uiState.toastMessage?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
             viewModel.clearToast()
         }
+    }
+
+    val inMedia = uiState.mediaSession == MediaSession.Active
+    val badgeColor = when {
+        uiState.armed -> Color(0xFFFF3B30)
+        inMedia -> AccentCyan
+        uiState.bleConnected -> EmeraldGreen
+        else -> Color.Gray.copy(alpha = 0.6f)
+    }
+    val badgeText = when {
+        inMedia -> "WIFI MEDIA"
+        uiState.armed -> "ARMADA (BLE)"
+        uiState.bleConnected -> "BLE OK"
+        uiState.bleScanning -> "BUSCANDO…"
+        else -> "SIN CONEXIÓN"
     }
 
     Scaffold(
@@ -64,37 +96,17 @@ fun MainScreen(viewModel: MainViewModel) {
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("CamESP32 S3", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("CamESP32 Moto", color = Color.White, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.width(12.dp))
-                        // Status Badge Pill
-                        val badgeColor = when {
-                            uiState.isArmed -> Color(0xFFFF3B30)
-                            uiState.isCameraOnline -> EmeraldGreen
-                            else -> Color.Gray.copy(alpha = 0.6f)
-                        }
-                        val badgeText = when {
-                            uiState.isArmed -> "ARMADA"
-                            uiState.isCameraOnline -> "WIFI ONLINE"
-                            else -> "OFFLINE"
-                        }
                         Box(
                             modifier = Modifier
                                 .background(color = badgeColor, shape = RoundedCornerShape(12.dp))
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .background(Color.White, CircleShape)
-                                )
+                                Box(modifier = Modifier.size(8.dp).background(Color.White, CircleShape))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = badgeText,
-                                    color = Color.White,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Text(badgeText, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -104,81 +116,56 @@ fun MainScreen(viewModel: MainViewModel) {
         },
         bottomBar = {
             NavigationBar(containerColor = SurfaceDark) {
-                NavigationBarItem(
-                    selected = uiState.selectedTab == 0,
-                    onClick = { viewModel.selectTab(0) },
-                    icon = { Icon(Icons.Default.Home, contentDescription = "Inicio") },
-                    label = { Text("Inicio") },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = AccentCyan, unselectedIconColor = Color.Gray)
+                val tabs = listOf(
+                    Triple(0, Icons.Default.Home, "Inicio"),
+                    Triple(1, Icons.Default.Videocam, "En Vivo"),
+                    Triple(2, Icons.Default.Collections, "Galería"),
+                    Triple(3, Icons.Default.Settings, "Ajustes"),
                 )
-                NavigationBarItem(
-                    selected = uiState.selectedTab == 1,
-                    onClick = { viewModel.selectTab(1) },
-                    icon = { Icon(Icons.Default.Videocam, contentDescription = "En Vivo") },
-                    label = { Text("En Vivo") },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = AccentCyan, unselectedIconColor = Color.Gray)
-                )
-                NavigationBarItem(
-                    selected = uiState.selectedTab == 2,
-                    onClick = { viewModel.selectTab(2) },
-                    icon = { Icon(Icons.Default.Collections, contentDescription = "Galería SD") },
-                    label = { Text("Galería SD") },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = AccentCyan, unselectedIconColor = Color.Gray)
-                )
-                NavigationBarItem(
-                    selected = uiState.selectedTab == 3,
-                    onClick = { viewModel.selectTab(3) },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Ajustes") },
-                    label = { Text("Ajustes") },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = AccentCyan, unselectedIconColor = Color.Gray)
-                )
+                tabs.forEach { (idx, icon, label) ->
+                    NavigationBarItem(
+                        selected = uiState.selectedTab == idx,
+                        onClick = { viewModel.selectTab(idx) },
+                        icon = { Icon(icon, contentDescription = label) },
+                        label = { Text(label) },
+                        colors = NavigationBarItemDefaults.colors(selectedIconColor = AccentCyan, unselectedIconColor = Color.Gray)
+                    )
+                }
             }
         },
         containerColor = DarkBg
     ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
+        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             when (uiState.selectedTab) {
                 0 -> HomeScreen(
-                    isCameraOnline = uiState.isCameraOnline,
-                    currentCameraMode = uiState.currentCameraMode,
-                    isMotionDetected = uiState.isMotionDetected,
-                    isArmed = uiState.isArmed,
-                    onSetArmed = { armed -> viewModel.setArmed(armed) },
-                    onNavigateToLive = { viewModel.selectTab(1) }
+                    uiState = uiState,
+                    onArm = { viewModel.arm() },
+                    onDisarm = { viewModel.disarm() },
+                    onRetryBle = { viewModel.connectBle() },
                 )
                 1 -> LiveStreamScreen(
-                    baseUrl = viewModel.baseUrl,
-                    username = uiState.username,
-                    password = uiState.password,
-                    isCameraOnline = uiState.isCameraOnline,
-                    onTriggerCapture = { viewModel.triggerPhotoCapture() }
+                    uiState = uiState,
+                    onOpenMedia = { viewModel.openMediaSession() },
+                    onCloseMedia = { viewModel.closeMediaSession() },
+                    onStartLive = { viewModel.startLiveSnapshots() },
+                    onStopLive = { viewModel.stopLiveSnapshots() },
+                    onCapture = { viewModel.triggerPhotoCapture() },
                 )
-                2 -> GalleryScreen(
-                    mediaList = uiState.mediaList,
-                    isLoading = uiState.isLoadingMedia,
-                    username = uiState.username,
-                    password = uiState.password,
-                    selectedMedia = uiState.selectedMedia,
-                    onRefresh = { viewModel.refreshMediaList() },
-                    onSelectMedia = { viewModel.selectMediaItem(it) },
-                    onDeleteAll = { viewModel.deleteAllPhotos() }
-                )
-                3 -> SettingsScreen(
-                    currentIp = uiState.ipAddress,
-                    currentPort = uiState.httpPort,
-                    currentUser = uiState.username,
-                    currentPass = uiState.password,
-                    onSaveSettings = { ip, port, user, pass ->
-                        viewModel.updateSettings(ip, port, user, pass)
-                    },
-                    onConfigEspWifi = { mode, ssid, pass ->
-                        viewModel.sendEspConfig(mode, ssid, pass)
+                2 -> {
+                    val imageLoader = androidx.compose.runtime.remember(uiState.mediaSession) {
+                        viewModel.boundImageLoader(context)
                     }
-                )
+                    GalleryScreen(
+                        uiState = uiState,
+                        onOpenMedia = { viewModel.openMediaSession() },
+                        onCloseMedia = { viewModel.closeMediaSession() },
+                        onRefresh = { viewModel.refreshMediaList() },
+                        onSelect = { viewModel.selectMedia(it) },
+                        onDeleteAll = { viewModel.deleteAllPhotos() },
+                        imageLoader = imageLoader,
+                    )
+                }
+                3 -> SettingsScreen(uiState = uiState)
             }
         }
     }

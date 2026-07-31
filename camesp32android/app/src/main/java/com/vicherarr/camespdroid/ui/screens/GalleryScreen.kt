@@ -20,17 +20,19 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.FolderZip
-import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -40,107 +42,84 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.widget.Toast
+import coil.ImageLoader
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.vicherarr.camespdroid.model.MediaItem
 import com.vicherarr.camespdroid.ui.theme.AccentCyan
+import com.vicherarr.camespdroid.ui.theme.EmeraldGreen
 import com.vicherarr.camespdroid.ui.theme.SurfaceCard
-import okhttp3.Credentials
+import com.vicherarr.camespdroid.ui.video.MjpegAviPlayer
+import com.vicherarr.camespdroid.viewmodel.MediaSession
+import com.vicherarr.camespdroid.viewmodel.UiState
 
 @Composable
 fun GalleryScreen(
-    mediaList: List<MediaItem>,
-    isLoading: Boolean,
-    username: String,
-    password: String,
-    selectedMedia: MediaItem?,
+    uiState: UiState,
+    onOpenMedia: () -> Unit,
+    onCloseMedia: () -> Unit,
     onRefresh: () -> Unit,
-    onSelectMedia: (MediaItem?) -> Unit,
-    onDeleteAll: () -> Unit
+    onSelect: (MediaItem?) -> Unit,
+    onDeleteAll: () -> Unit,
+    imageLoader: ImageLoader,
 ) {
+    if (uiState.mediaSession != MediaSession.Active) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(Icons.Default.Collections, contentDescription = null, tint = AccentCyan, modifier = Modifier.size(56.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+            Text("Galería en la SD", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "Enciende el WiFi de la cámara para ver las fotos y los clips grabados.",
+                color = Color.LightGray, fontSize = 13.sp, textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+            Button(
+                onClick = onOpenMedia,
+                enabled = uiState.bleConnected,
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen)
+            ) { Text("Encender cámara (WiFi)", fontWeight = FontWeight.Bold) }
+        }
+        return
+    }
+
     var showDeleteConfirm by remember { mutableStateOf(false) }
     Box(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
-        ) {
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Archivos SD (${mediaList.size})",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp
-                )
-
+                Text("Archivos SD (${uiState.mediaList.size})", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    IconButton(
-                        onClick = { showDeleteConfirm = true },
-                        modifier = Modifier.background(SurfaceCard, RoundedCornerShape(12.dp))
-                    ) {
-                        Icon(imageVector = Icons.Default.DeleteSweep, contentDescription = "Borrar todas", tint = Color(0xFFE57373))
+                    IconButton(onClick = { showDeleteConfirm = true }, modifier = Modifier.background(SurfaceCard, RoundedCornerShape(12.dp))) {
+                        Icon(Icons.Default.DeleteSweep, contentDescription = "Borrar todo", tint = Color(0xFFE57373))
                     }
-                    IconButton(
-                        onClick = onRefresh,
-                        modifier = Modifier.background(SurfaceCard, RoundedCornerShape(12.dp))
-                    ) {
-                        Icon(imageVector = Icons.Default.Refresh, contentDescription = "Refrescar SD", tint = Color.White)
+                    IconButton(onClick = onRefresh, modifier = Modifier.background(SurfaceCard, RoundedCornerShape(12.dp))) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refrescar", tint = Color.White)
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(12.dp))
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            if (isLoading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
+            if (uiState.isLoadingMedia) {
+                Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = AccentCyan)
                 }
-            } else if (mediaList.isEmpty()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FolderZip,
-                        contentDescription = null,
-                        tint = Color.Gray,
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "No se encontraron archivos en la tarjeta SD",
-                        color = Color.LightGray,
-                        fontSize = 14.sp
-                    )
-                    Text(
-                        text = "Conéctate al WiFi y pulsa 'Capturar Foto'",
-                        color = Color.Gray,
-                        fontSize = 12.sp
-                    )
+            } else if (uiState.mediaList.isEmpty()) {
+                Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    Text("No hay archivos en la SD", color = Color.LightGray, fontSize = 14.sp)
                 }
             } else {
                 LazyVerticalGrid(
@@ -150,94 +129,63 @@ fun GalleryScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    items(mediaList) { item ->
-                        val ctx = LocalContext.current
-                        MediaCardItem(
-                            item = item,
-                            username = username,
-                            password = password,
-                            // Los clips de vídeo (AVI-MJPEG) se abren en un reproductor externo
-                            // (VLC/MX Player); Coil solo decodifica imágenes.
-                            onClick = {
-                                if (item.isVideo) openVideoExternally(ctx, item.url)
-                                else onSelectMedia(item)
-                            }
-                        )
+                    items(uiState.mediaList) { item ->
+                        MediaCard(item, imageLoader) { onSelect(item) }
                     }
                 }
             }
+
+            OutlinedButton(onClick = onCloseMedia, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Icon(Icons.Default.Close, contentDescription = null)
+                Spacer(modifier = Modifier.height(0.dp))
+                Text("  Cerrar cámara (volver a BLE)")
+            }
         }
 
-        // Confirmación de borrado total
         if (showDeleteConfirm) {
             AlertDialog(
                 onDismissRequest = { showDeleteConfirm = false },
                 containerColor = SurfaceCard,
-                title = { Text("Borrar todas las fotos", color = Color.White) },
-                text = { Text("¿Seguro que quieres borrar TODAS las fotos de la tarjeta SD? Esta acción no se puede deshacer.", color = Color.LightGray) },
+                title = { Text("Borrar todo", color = Color.White) },
+                text = { Text("¿Borrar TODOS los archivos de la SD? No se puede deshacer.", color = Color.LightGray) },
                 confirmButton = {
-                    TextButton(onClick = {
-                        showDeleteConfirm = false
-                        onDeleteAll()
-                    }) { Text("Borrar todo", color = Color(0xFFE57373), fontWeight = FontWeight.Bold) }
+                    TextButton(onClick = { showDeleteConfirm = false; onDeleteAll() }) {
+                        Text("Borrar", color = Color(0xFFE57373), fontWeight = FontWeight.Bold)
+                    }
                 },
-                dismissButton = {
-                    TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancelar", color = Color.White) }
-                }
+                dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancelar", color = Color.White) } }
             )
         }
 
-        // Fullscreen Media Modal Dialog
-        selectedMedia?.let { item ->
-            Dialog(onDismissRequest = { onSelectMedia(null) }) {
+        // Modal de detalle: foto (Coil) o vídeo (reproductor MJPEG in-app).
+        uiState.selectedMedia?.let { item ->
+            Dialog(onDismissRequest = { onSelect(null) }) {
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = SurfaceCard)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = item.filename,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(onClick = { onSelectMedia(null) }) {
-                                Icon(imageVector = Icons.Default.Close, contentDescription = "Cerrar", tint = Color.White)
-                            }
+                    Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(item.filename, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            IconButton(onClick = { onSelect(null) }) { Icon(Icons.Default.Close, contentDescription = "Cerrar", tint = Color.White) }
                         }
-
                         Spacer(modifier = Modifier.height(12.dp))
-
-                        val context = LocalContext.current
-                        val imageRequest = remember(item.url, username, password) {
-                            ImageRequest.Builder(context)
-                                .data(item.url)
-                                .addHeader("Authorization", Credentials.basic(username, password))
-                                .crossfade(true)
-                                .build()
+                        if (item.isVideo) {
+                            when {
+                                uiState.loadingClip -> CircularProgressIndicator(color = AccentCyan)
+                                uiState.selectedClipBytes != null -> MjpegAviPlayer(uiState.selectedClipBytes!!)
+                                else -> Text("No se pudo descargar el clip", color = Color.LightGray, fontSize = 13.sp)
+                            }
+                        } else {
+                            AsyncImage(
+                                model = item.url,
+                                imageLoader = imageLoader,
+                                contentDescription = item.filename,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxWidth().aspectRatio(4f / 3f)
+                            )
                         }
-
-                        AsyncImage(
-                            model = imageRequest,
-                            contentDescription = item.filename,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(4f / 3f)
-                                .clip(RoundedCornerShape(12.dp))
-                        )
                     }
                 }
             }
@@ -246,84 +194,32 @@ fun GalleryScreen(
 }
 
 @Composable
-fun MediaCardItem(
-    item: MediaItem,
-    username: String,
-    password: String,
-    onClick: () -> Unit
-) {
+private fun MediaCard(item: MediaItem, imageLoader: ImageLoader, onClick: () -> Unit) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            .clickable { onClick() },
+        modifier = Modifier.fillMaxWidth().aspectRatio(1f).clickable { onClick() },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = SurfaceCard)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             if (item.isVideo) {
-                // Clip de vídeo: placeholder oscuro con icono de reproducción (no decodificable por Coil).
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(0xFF1B1B22)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayCircle,
-                        contentDescription = "Reproducir vídeo",
-                        tint = AccentCyan,
-                        modifier = Modifier.size(56.dp)
-                    )
+                Box(modifier = Modifier.fillMaxSize().background(Color(0xFF1B1B22)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.PlayCircle, contentDescription = "Vídeo", tint = AccentCyan, modifier = Modifier.size(56.dp))
                 }
             } else {
-                val context = LocalContext.current
-                val imageRequest = remember(item.url, username, password) {
-                    ImageRequest.Builder(context)
-                        .data(item.url)
-                        .addHeader("Authorization", Credentials.basic(username, password))
-                        .crossfade(true)
-                        .build()
-                }
                 AsyncImage(
-                    model = imageRequest,
+                    model = item.url,
+                    imageLoader = imageLoader,
                     contentDescription = item.filename,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
             }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .background(Color.Black.copy(alpha = 0.6f))
-                    .padding(8.dp)
-            ) {
+            Box(modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter).background(Color.Black.copy(alpha = 0.6f)).padding(6.dp)) {
                 Text(
                     text = if (item.isVideo) "🎬 ${item.filename}" else item.filename,
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    maxLines = 1
+                    color = Color.White, fontSize = 10.sp, maxLines = 1
                 )
             }
         }
-    }
-}
-
-/** Abre un clip de vídeo de la SD en un reproductor externo (VLC/MX Player) vía ACTION_VIEW. */
-private fun openVideoExternally(context: Context, url: String) {
-    try {
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(Uri.parse(url), "video/x-msvideo")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        context.startActivity(Intent.createChooser(intent, "Abrir vídeo con"))
-    } catch (e: Exception) {
-        Toast.makeText(
-            context,
-            "No hay reproductor de vídeo. Instala VLC o MX Player para ver los clips AVI.",
-            Toast.LENGTH_LONG
-        ).show()
     }
 }
