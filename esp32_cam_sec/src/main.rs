@@ -28,6 +28,8 @@ const RECORD_COOLDOWN_SECS: u64 = 3;
 /// Resolución del clip (VGA por defecto).
 const VIDEO_WIDTH: u32 = 640;
 const VIDEO_HEIGHT: u32 = 480;
+/// Duración máxima de una sesión WiFi de media antes de volver a BLE (seguridad).
+const MAX_WIFI_SECS: u64 = 180;
 
 /// Ajusta el reloj del sistema (RTC) a partir de un epoch en milisegundos (recibido por BLE).
 fn set_system_time_ms(ms: u64) {
@@ -71,7 +73,8 @@ fn main() -> anyhow::Result<()> {
     };
 
     // BLE PRIMERO (antes de WiFi): si no, el controlador BT se queda sin RAM y crashea.
-    let ble = ble::BleControl::start(cfg.alarm_armed);
+    // Option porque se DEINICIA al abrir una sesión WiFi (liberar RAM) y se recrea al cerrarla.
+    let mut ble: Option<ble::BleControl> = Some(ble::BleControl::start(cfg.alarm_armed));
 
     // Cámara (una vez; se usa para grabar y para /photo cuando hay WiFi).
     let cam = camera::Camera::new().ok();
@@ -81,92 +84,109 @@ fn main() -> anyhow::Result<()> {
     let camera_ready = Arc::new(AtomicBool::new(cam_ok));
     let armed_flag = Arc::new(AtomicBool::new(cfg.alarm_armed));
 
-    // WiFi inicializado UNA vez (deja lwip + netif listos) y radio apagada de inmediato.
-    // Toggleamos solo la radio (esp_wifi_start/stop): sin re-enlazar el puerto 80 ni caer lwip.
     let wifi_mode = if cfg.mode == "STA" { wifi::WifiMode::STA } else { wifi::WifiMode::AP };
-    let modem = unsafe { esp_idf_hal::modem::Modem::steal() };
-    let mut wifi_mgr = wifi::WifiManager::new(modem, wifi_mode, nvs_partition.clone()).ok();
-    // NOTA: por ahora el WiFi AP arranca ENCENDIDO y estable (togglear la radio con BLE
-    // conectado da inestabilidad de coexistencia; el apagado on-demand/light-sleep es fase aparte).
-    let mut wifi_on = wifi_mgr.is_some();
+    // Flag que la app pone por HTTP (POST /wifi_off) para cerrar la sesión y volver a BLE.
+    let wifi_off_flag = Arc::new(AtomicBool::new(false));
 
-    // Servidor HTTP creado UNA vez (escucha siempre en :80; lwip ya está arriba).
-    let _server = server::WebServer::new(
-        motion_state.clone(), nvs_partition.clone(), cfg.mode.clone(), camera_ready.clone(), armed_flag.clone(),
-    ).ok();
-
+    // ALTERNANCIA BLE <-> WiFi (un solo radio a la vez): por defecto BLE (control). Al pedir
+    // media, se PAUSA BLE (antena libre) y se abre una sesión WiFi (AP + servidor HTTP); al
+    // cerrarla (POST /wifi_off o timeout) se DEINICIA WiFi y se REANUDA BLE. Evita la
+    // degradación por coexistencia y permite bajo consumo (solo un radio activo).
+    let mut session: Option<(wifi::WifiManager<'static>, server::WebServer)> = None;
+    let mut session_start = Instant::now();
     let mut last_record = Instant::now() - Duration::from_secs(RECORD_COOLDOWN_SECS + 1);
     let mut tick: u32 = 0;
 
-    info!("Runtime híbrido listo. armed={}, cámara={}", cfg.alarm_armed, cam_ok);
+    info!("Runtime híbrido listo (alternancia BLE/WiFi). armed={}, cámara={}", cfg.alarm_armed, cam_ok);
 
     loop {
         tick = tick.wrapping_add(1);
         let is_motion = motion_sensor.is_high();
         motion_state.store(is_motion, Ordering::Relaxed);
 
-        // --- Hora recibida por BLE ---
-        if let Some(ms) = ble.take_set_time_ms() {
-            set_system_time_ms(ms);
-        }
-
-        // --- Comandos BLE (control): drenar toda la cola ---
-        while let Some(cmd) = ble.take_command() {
-            match cmd {
-                ble::CMD_ARM => {
-                    armed_flag.store(true, Ordering::Relaxed); cfg.alarm_armed = true;
-                    let _ = config::save_config(&mut nvs_handle, &cfg);
-                    info!("BLE: ARMADO");
-                }
-                ble::CMD_DISARM => {
-                    armed_flag.store(false, Ordering::Relaxed); cfg.alarm_armed = false;
-                    let _ = config::save_config(&mut nvs_handle, &cfg);
-                    info!("BLE: DESARMADO");
-                }
-                ble::CMD_WIFI_ON => {
-                    if !wifi_on {
-                        if let Some(w) = wifi_mgr.as_mut() {
-                            match w.radio_on() {
-                                Ok(_) => { wifi_on = true; info!("Media WiFi ENCENDIDA."); }
-                                Err(e) => error!("radio_on falló: {}", e),
-                            }
+        if session.is_none() {
+            // ===== MODO BLE (control) =====
+            let mut open_wifi = false;
+            if let Some(b) = ble.as_ref() {
+                if let Some(ms) = b.take_set_time_ms() { set_system_time_ms(ms); }
+                while let Some(cmd) = b.take_command() {
+                    match cmd {
+                        ble::CMD_ARM => {
+                            armed_flag.store(true, Ordering::Relaxed); cfg.alarm_armed = true;
+                            let _ = config::save_config(&mut nvs_handle, &cfg);
+                            info!("BLE: ARMADO");
                         }
+                        ble::CMD_DISARM => {
+                            armed_flag.store(false, Ordering::Relaxed); cfg.alarm_armed = false;
+                            let _ = config::save_config(&mut nvs_handle, &cfg);
+                            info!("BLE: DESARMADO");
+                        }
+                        ble::CMD_WIFI_ON => open_wifi = true,
+                        ble::CMD_WIFI_OFF => {} // ya estamos en BLE, sin sesión WiFi
+                        other => info!("BLE: comando desconocido 0x{:02x}", other),
                     }
                 }
-                ble::CMD_WIFI_OFF => {
-                    if wifi_on {
-                        if let Some(w) = wifi_mgr.as_mut() { let _ = w.radio_off(); }
-                        wifi_on = false;
-                        info!("Media WiFi APAGADA.");
+                if !open_wifi {
+                    b.update_state(armed_flag.load(Ordering::Relaxed), is_motion, false);
+                }
+            }
+            if open_wifi {
+                // Abrir sesión de media: DEINICIAR BLE (liberar RAM) y levantar AP + servidor.
+                ble = None; // suelta el BleControl
+                ble::shutdown(); // deinit del controlador BLE
+                wifi_off_flag.store(false, Ordering::Relaxed);
+                let modem = unsafe { esp_idf_hal::modem::Modem::steal() };
+                match wifi::WifiManager::new(modem, wifi_mode.clone(), nvs_partition.clone()) {
+                    Ok(w) => match server::WebServer::new(
+                        motion_state.clone(), nvs_partition.clone(), cfg.mode.clone(),
+                        camera_ready.clone(), armed_flag.clone(), wifi_off_flag.clone(),
+                    ) {
+                        Ok(s) => {
+                            session = Some((w, s));
+                            session_start = Instant::now();
+                            info!("Sesión WiFi ABIERTA (BLE deinicializado).");
+                        }
+                        Err(e) => {
+                            error!("Servidor HTTP falló: {}; vuelvo a BLE", e);
+                            drop(w);
+                            ble = Some(ble::BleControl::start(armed_flag.load(Ordering::Relaxed)));
+                        }
+                    },
+                    Err(e) => {
+                        error!("WiFi falló: {}; vuelvo a BLE", e);
+                        ble = Some(ble::BleControl::start(armed_flag.load(Ordering::Relaxed)));
                     }
                 }
-                other => info!("BLE: comando desconocido 0x{:02x}", other),
+            }
+        } else {
+            // ===== MODO WiFi (media) ===== BLE apagado; control por HTTP.
+            if wifi_off_flag.load(Ordering::Relaxed) || session_start.elapsed().as_secs() > MAX_WIFI_SECS {
+                session = None; // drop -> deinicia WiFi + servidor (libera el puerto 80)
+                ble = Some(ble::BleControl::start(armed_flag.load(Ordering::Relaxed)));
+                info!("Sesión WiFi CERRADA (BLE reanudado).");
             }
         }
-        let armed = armed_flag.load(Ordering::Relaxed);
 
-        // --- Grabación por movimiento (solo armado, con enfriamiento) ---
+        // ===== Grabación por movimiento (en ambos modos si está armado) =====
+        let armed = armed_flag.load(Ordering::Relaxed);
         if armed && is_motion && last_record.elapsed().as_secs() >= RECORD_COOLDOWN_SECS {
             show_led(&mut status, led::LedState::Recording, true);
-            record_event_clip(cam.as_ref(), sd.as_ref(), &ble);
+            record_event_clip(cam.as_ref(), sd.as_ref(), ble.as_ref());
             last_record = Instant::now();
-            // Esperar inactividad para no encadenar clips.
             let mut quiet = Instant::now();
             while quiet.elapsed().as_secs() < RECORD_COOLDOWN_SECS {
-                if ble.has_pending(ble::CMD_DISARM) { break; } // desarme inmediato
+                if ble.as_ref().map_or(false, |b| b.has_pending(ble::CMD_DISARM)) { break; }
                 if motion_sensor.is_high() { quiet = Instant::now(); }
-                ble.update_state(armed, motion_sensor.is_high(), wifi_on);
                 thread::sleep(Duration::from_millis(150));
             }
         }
 
-        // --- Estado BLE + LED ---
-        ble.update_state(armed, is_motion, wifi_on);
+        // ===== LED =====
         let led_state = if armed { led::LedState::ArmedWindow } else { led::LedState::Disarmed };
         show_led(&mut status, led_state, tick % 2 == 0);
 
         if tick % 40 == 0 {
-            info!("armed={} motion={} wifi={}", armed, is_motion, wifi_on);
+            info!("modo={} armed={} motion={}", if session.is_some() { "WiFi" } else { "BLE" }, armed, is_motion);
         }
 
         thread::sleep(Duration::from_millis(250));
@@ -191,7 +211,7 @@ fn next_clip_index() -> u32 {
 }
 
 /// Graba un clip AVI-MJPEG a la SD durante `CLIP_DURATION_SECS`.
-fn record_event_clip(cam: Option<&camera::Camera>, sd: Option<&storage::Storage>, ble: &ble::BleControl) {
+fn record_event_clip(cam: Option<&camera::Camera>, sd: Option<&storage::Storage>, ble: Option<&ble::BleControl>) {
     let cam = match cam {
         Some(c) if c.is_real() => c,
         _ => { error!("Sin cámara real: no se graba el clip"); return; }
@@ -215,7 +235,7 @@ fn record_event_clip(cam: Option<&camera::Camera>, sd: Option<&storage::Storage>
     let t0 = Instant::now();
     while t0.elapsed().as_secs() < CLIP_DURATION_SECS {
         // Cortar la grabación si llega un DESARMAR por BLE (respuesta rápida al usuario).
-        if ble.has_pending(ble::CMD_DISARM) {
+        if ble.map_or(false, |b| b.has_pending(ble::CMD_DISARM)) {
             info!("DESARMAR pendiente: cierro el clip antes de tiempo");
             break;
         }

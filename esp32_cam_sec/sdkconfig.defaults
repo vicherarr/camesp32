@@ -24,10 +24,10 @@ CONFIG_SPIRAM_SPEED_80M=y
 # lets BLE come up even when PSRAM/camera are absent or in a different mode)
 CONFIG_SPIRAM_IGNORE_NOTFOUND=y
 
-# Stack de la tarea main: el orquestador corre aquí esp_camera_init(), frame2jpg y el
-# grabador de vídeo, que usan mucha pila. El default (~3.5 KB) se desborda (stack overflow
-# en esp_camera_init). 32 KB da margen de sobra.
-CONFIG_ESP_MAIN_TASK_STACK_SIZE=32768
+# Stack de la tarea main: aquí corren esp_camera_init(), frame2jpg y el grabador de vídeo
+# (el default ~3.5 KB se desborda). 16 KB es suficiente y deja DRAM libre para que la tarea
+# del servidor HTTP pueda crearse con BLE+WiFi arriba (evita ESP_ERR_HTTPD_TASK).
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 
 # Nombres largos en la FAT (LFN) para poder nombrar clips/fotos con fecha-hora
 # (p.ej. 20260730-153201.avi). Sin esto la FAT es 8.3 (máx 8 chars, el bug del CLIP00001).

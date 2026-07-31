@@ -48,24 +48,18 @@ fn capture_jpeg() -> Option<Vec<u8>> {
     }
 }
 
-/// Guarda el nuevo estado de alarma en NVS (preservando el modo WiFi) y reinicia para que el
-/// boot aplique la política de energía correspondiente (armado = deep sleep / desarmado = WiFi).
-fn set_armed_and_restart(partition: EspDefaultNvsPartition, armed: bool) {
+/// Guarda el estado de alarma en NVS (preservando el modo WiFi). Ya NO reinicia: el runtime
+/// híbrido aplica el cambio en vivo leyendo el flag compartido.
+fn save_armed_nvs(partition: EspDefaultNvsPartition, armed: bool) {
     let (mut cfg, mut nvs) = load_config(partition);
     cfg.alarm_armed = armed;
     if let Err(e) = save_config(&mut nvs, &cfg) {
         ::log::error!("No se pudo guardar alarm_armed={}: {}", armed, e);
-        return;
     }
-    ::log::info!("Alarma {} -> reiniciando para aplicar", if armed { "ARMADA" } else { "DESARMADA" });
-    std::thread::spawn(|| {
-        std::thread::sleep(std::time::Duration::from_millis(800));
-        unsafe { esp_idf_svc::sys::esp_restart() };
-    });
 }
 
 impl WebServer {
-    pub fn new(motion_state: Arc<AtomicBool>, partition: EspDefaultNvsPartition, current_mode: String, camera_ready: Arc<AtomicBool>, armed: Arc<AtomicBool>) -> Result<Self> {
+    pub fn new(motion_state: Arc<AtomicBool>, partition: EspDefaultNvsPartition, current_mode: String, camera_ready: Arc<AtomicBool>, armed: Arc<AtomicBool>, wifi_off: Arc<AtomicBool>) -> Result<Self> {
         // uri_match_wildcard debe estar ON para que el handler "/file/*" case con
         // rutas como "/file/IMG_1.JPG"; por defecto viene desactivado (404 en la SD).
         let conf = Configuration {
@@ -294,22 +288,34 @@ impl WebServer {
             Ok::<(), anyhow::Error>(())
         })?;
         
-        // Arma la alarma: guarda NVS(armed=true) y reinicia -> el dispositivo pasa a bajo
-        // consumo (deep sleep) y solo despierta/graba por movimiento.
+        // Arma/desarma la alarma en vivo (además de por BLE): fija el flag compartido + NVS.
         let arm_partition = partition.clone();
+        let arm_flag = armed.clone();
         server.fn_handler("/arm", Method::Post, move |request| {
+            arm_flag.store(true, Ordering::Relaxed);
+            save_armed_nvs(arm_partition.clone(), true);
             let mut response = request.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
             response.write_all(b"{\"status\":\"ok\",\"armed\":true}")?;
-            set_armed_and_restart(arm_partition.clone(), true);
             Ok::<(), anyhow::Error>(())
         })?;
 
-        // Desarma la alarma: guarda NVS(armed=false) y reinicia -> WiFi always-on, sin grabar.
         let disarm_partition = partition.clone();
+        let disarm_flag = armed.clone();
         server.fn_handler("/disarm", Method::Post, move |request| {
+            disarm_flag.store(false, Ordering::Relaxed);
+            save_armed_nvs(disarm_partition.clone(), false);
             let mut response = request.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
             response.write_all(b"{\"status\":\"ok\",\"armed\":false}")?;
-            set_armed_and_restart(disarm_partition.clone(), false);
+            Ok::<(), anyhow::Error>(())
+        })?;
+
+        // Cierra la sesión de media y pide volver al modo BLE (apaga WiFi, reanuda BLE).
+        let wifi_off_flag = wifi_off.clone();
+        server.fn_handler("/wifi_off", Method::Post, move |request| {
+            wifi_off_flag.store(true, Ordering::Relaxed);
+            info!("HTTP /wifi_off: cerrando sesión WiFi, volviendo a BLE");
+            let mut response = request.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
+            response.write_all(b"{\"status\":\"ok\"}")?;
             Ok::<(), anyhow::Error>(())
         })?;
 

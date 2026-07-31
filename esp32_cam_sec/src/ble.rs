@@ -34,10 +34,14 @@ pub struct BleControl {
 
 impl BleControl {
     /// Arranca el stack BLE, crea el servicio/características y empieza a anunciarse como "CAMSEC".
+    /// Puede llamarse de nuevo tras [`shutdown`]: `BLEDevice::init()` re-inicializa el controlador.
     pub fn start(initial_armed: bool) -> Self {
         let cmd_queue = Arc::new(StdMutex::new(VecDeque::<u8>::new()));
         let set_time_ms = Arc::new(StdMutex::new(0u64));
 
+        // Idempotente: en el primer arranque no hace nada extra; tras un shutdown re-inicializa
+        // el controlador BLE (que se deinicializó para liberar RAM durante la sesión WiFi).
+        BLEDevice::init();
         let device = BLEDevice::take();
         let server = device.get_server();
 
@@ -115,5 +119,16 @@ impl BleControl {
         let mut ch = self.state_char.lock();
         ch.set_value(&[armed as u8, motion as u8, wifi_on as u8]);
         ch.notify();
+    }
+
+}
+
+/// Apaga por completo el stack BLE (deinit del controlador) para **liberar ~50 KB de RAM**
+/// durante una sesión WiFi. Llamar tras soltar (drop) el `BleControl`. Para reanudar el BLE,
+/// crear un nuevo `BleControl::start` (que re-inicializa el controlador).
+pub fn shutdown() {
+    match BLEDevice::deinit_full() {
+        Ok(_) => info!("BLE: apagado (deinit, RAM liberada para WiFi)"),
+        Err(e) => ::log::error!("BLE deinit falló: {:?}", e),
     }
 }
