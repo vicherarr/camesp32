@@ -66,6 +66,12 @@ class WifiLink(private val context: Context) {
             .socketFactory(net.socketFactory)
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+            .addInterceptor { chain ->
+                val request = chain.request().newBuilder()
+                    .header("Authorization", okhttp3.Credentials.basic("admin", "123456"))
+                    .build()
+                chain.proceed(request)
+            }
             .build()
     }
 

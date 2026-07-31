@@ -253,3 +253,4 @@ fn record_event_clip(cam: Option<&camera::Camera>, sd: Option<&storage::Storage>
         Err(e) => error!("Error cerrando clip {}: {}", path, e),
     }
 }
+pub mod auth_test;

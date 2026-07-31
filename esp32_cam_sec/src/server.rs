@@ -58,6 +58,17 @@ fn save_armed_nvs(partition: EspDefaultNvsPartition, armed: bool) {
     }
 }
 
+
+macro_rules! require_auth {
+    ($req:expr) => {
+        if $req.header("Authorization") != Some("Basic YWRtaW46MTIzNDU2") {
+            let mut response = $req.into_response(401, Some("Unauthorized"), &[("WWW-Authenticate", "Basic realm=\"CamSec\"")])?;
+            response.write_all(b"Unauthorized")?;
+            return Ok::<(), anyhow::Error>(());
+        }
+    };
+}
+
 impl WebServer {
     pub fn new(motion_state: Arc<AtomicBool>, partition: EspDefaultNvsPartition, current_mode: String, camera_ready: Arc<AtomicBool>, armed: Arc<AtomicBool>, wifi_off: Arc<AtomicBool>) -> Result<Self> {
         // uri_match_wildcard debe estar ON para que el handler "/file/*" case con
@@ -70,6 +81,7 @@ impl WebServer {
         let mut server = EspHttpServer::new(&conf)?;
 
         server.fn_handler("/", Method::Get, |request| {
+            require_auth!(request);
             let mut response = request.into_ok_response()?;
             let html = "<html><body><h1>ESP32-CAM Seguridad</h1>\
                 <a href='/photo'>Foto en vivo</a><br/>\
@@ -85,6 +97,7 @@ impl WebServer {
 
         // Borra todas las fotos de la SD. Usado por la app y por el botón del dashboard.
         server.fn_handler("/deleteall", Method::Post, |request| {
+            require_auth!(request);
             // Recolectar nombres primero, luego borrar (no borrar mientras se itera).
             let mut names: Vec<String> = Vec::new();
             if let Ok(entries) = fs::read_dir("/sdcard") {
@@ -112,6 +125,7 @@ impl WebServer {
         // Lets you verify the onboard camera over WiFi without the motion sensor.
         let cam_ready = camera_ready.clone();
         server.fn_handler("/photo", Method::Get, move |request| {
+            require_auth!(request);
             if !cam_ready.load(Ordering::Relaxed) {
                 let mut r = request.into_status_response(503)?;
                 r.write_all(b"camera not ready")?;
@@ -134,6 +148,7 @@ impl WebServer {
         // "capturar foto" button, which does GET /capture and expects 2xx).
         let cap_ready = camera_ready.clone();
         server.fn_handler("/capture", Method::Get, move |request| {
+            require_auth!(request);
             if !cap_ready.load(Ordering::Relaxed) {
                 let mut r = request.into_status_response(503)?;
                 r.write_all(b"camera not ready")?;
@@ -173,6 +188,7 @@ impl WebServer {
         })?;
 
         server.fn_handler("/photos", Method::Get, |request| {
+            require_auth!(request);
             let mut response = request.into_ok_response()?;
             if let Ok(mut entries) = fs::read_dir("/sdcard") {
                 response.write_all(b"<html><body><h2>Lista de Fotos</h2><ul>")?;
@@ -199,6 +215,7 @@ impl WebServer {
         })?;
 
         server.fn_handler("/file/*", Method::Get, |request| {
+            require_auth!(request);
             let uri = request.uri();
             let file_name = uri.trim_start_matches("/file/");
             let path = format!("/sdcard/{}", file_name);
@@ -243,6 +260,7 @@ impl WebServer {
         let motion_state_info = motion_state.clone();
         let armed_info = armed.clone();
         server.fn_handler("/info", Method::Get, move |request| {
+            require_auth!(request);
             let is_detecting = motion_state_info.load(Ordering::Relaxed);
             let armed = armed_info.load(Ordering::Relaxed);
             // RSSI del enlace LR (dBm). 0 = sin enlace. Útil para calibrar el alcance.
@@ -266,6 +284,7 @@ impl WebServer {
         // Debug log readback: returns the RAM ring buffer as plain text. This is
         // our only window once USB-OTG host mode kills the serial console.
         server.fn_handler("/logs", Method::Get, |request| {
+            require_auth!(request);
             let logs = crate::logbuf::dump();
             let mut response = request.into_response(
                 200,
@@ -279,6 +298,7 @@ impl WebServer {
         // New endpoint to report sensor state
         let motion_state_clone = motion_state.clone();
         server.fn_handler("/sensor", Method::Get, move |request| {
+            require_auth!(request);
             let is_detecting = motion_state_clone.load(Ordering::Relaxed);
             let mut response = request.into_response(
                 200,
@@ -294,6 +314,7 @@ impl WebServer {
         let arm_partition = partition.clone();
         let arm_flag = armed.clone();
         server.fn_handler("/arm", Method::Post, move |request| {
+            require_auth!(request);
             arm_flag.store(true, Ordering::Relaxed);
             save_armed_nvs(arm_partition.clone(), true);
             let mut response = request.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
@@ -304,6 +325,7 @@ impl WebServer {
         let disarm_partition = partition.clone();
         let disarm_flag = armed.clone();
         server.fn_handler("/disarm", Method::Post, move |request| {
+            require_auth!(request);
             disarm_flag.store(false, Ordering::Relaxed);
             save_armed_nvs(disarm_partition.clone(), false);
             let mut response = request.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
@@ -314,6 +336,7 @@ impl WebServer {
         // Cierra la sesión de media y pide volver al modo BLE (apaga WiFi, reanuda BLE).
         let wifi_off_flag = wifi_off.clone();
         server.fn_handler("/wifi_off", Method::Post, move |request| {
+            require_auth!(request);
             wifi_off_flag.store(true, Ordering::Relaxed);
             info!("HTTP /wifi_off: cerrando sesión WiFi, volviendo a BLE");
             let mut response = request.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
@@ -328,6 +351,7 @@ impl WebServer {
 
         // Config endpoint
         server.fn_handler("/config", Method::Post, move |mut request| {
+            require_auth!(request);
             let mut buf = [0u8; 256];
             let bytes_read = request.read(&mut buf)?;
             if bytes_read > 0 {

@@ -57,16 +57,17 @@ impl BleControl {
 
         let service = server.create_service(SVC_UUID);
 
-        // Característica Estado: [armed, motion, wifi_on] (read + notify).
+        // Característica Estado: [armed, motion, wifi_on] (read_enc + notify).
+        // Se requiere estar emparejado (bonding) para leer.
         let state_char = service
             .lock()
-            .create_characteristic(STATE_UUID, NimbleProperties::READ | NimbleProperties::NOTIFY);
+            .create_characteristic(STATE_UUID, NimbleProperties::READ_ENC | NimbleProperties::NOTIFY);
         state_char.lock().set_value(&[initial_armed as u8, 0, 0]);
 
-        // Característica Comando: write. Guarda el comando para que lo procese el main.
+        // Característica Comando: write_enc.
         let cmd_char = service
             .lock()
-            .create_characteristic(CMD_UUID, NimbleProperties::WRITE);
+            .create_characteristic(CMD_UUID, NimbleProperties::WRITE_ENC);
         let cq = cmd_queue.clone();
         let st = set_time_ms.clone();
         cmd_char.lock().on_write(move |args| {
@@ -85,6 +86,14 @@ impl BleControl {
                 info!("BLE: comando recibido 0x{:02x}", code);
             }
         });
+
+        // Configuración de Seguridad BLE:
+        // Requiere emparejamiento (Bond) y protección MITM (Passkey).
+        let mut security = device.security();
+        security.set_auth(esp32_nimble::enums::AuthReq::Bond | esp32_nimble::enums::AuthReq::Mitm);
+        security.set_io_cap(esp32_nimble::enums::SecurityIOCap::DisplayOnly);
+        security.set_passkey(123456); // PIN de emparejamiento estático
+        security.resolve_rpa();
 
         let advertising = device.get_advertising();
         advertising
