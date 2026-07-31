@@ -40,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -63,6 +64,17 @@ import com.vicherarr.camespdroid.viewmodel.MediaSession
 fun MainScreen(viewModel: MainViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    var wifiCountdown by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(12) }
+
+    LaunchedEffect(uiState.mediaSession) {
+        if (uiState.mediaSession == MediaSession.Opening) {
+            wifiCountdown = 12
+            while (wifiCountdown > 0) {
+                kotlinx.coroutines.delay(1000)
+                wifiCountdown--
+            }
+        }
+    }
 
     // Permisos BLE (Android 12+: SCAN/CONNECT; anteriores: ubicación).
     val blePerms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -192,9 +204,12 @@ fun MainScreen(viewModel: MainViewModel) {
                     CircularProgressIndicator(color = AccentCyan)
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = if (uiState.mediaSession == MediaSession.Opening) "Conectando WiFi de la cámara..." else "Cerrando WiFi y volviendo a BLE...",
+                        text = if (uiState.mediaSession == MediaSession.Opening) {
+                            if (wifiCountdown > 0) "Conectando WiFi de la cámara... ($wifiCountdown s)" else "Conectando WiFi de la cámara..."
+                        } else "Cerrando WiFi y volviendo a BLE...",
                         color = Color.White,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
             }
