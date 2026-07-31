@@ -94,13 +94,15 @@ impl WebServer {
             }
             let (mut deleted, mut errors) = (0u32, 0u32);
             for n in names {
-                if fs::remove_file(format!("/sdcard/{}", n)).is_ok() {
+                let path = format!("/sdcard/{}", n);
+                if fs::remove_file(&path).is_ok() || fs::remove_dir_all(&path).is_ok() {
                     deleted += 1;
                 } else {
+                    ::log::error!("Fallo al borrar: {}", path);
                     errors += 1;
                 }
             }
-            info!("SD wipe: {} fotos borradas, {} errores", deleted, errors);
+            info!("SD wipe: {} elementos borrados, {} errores", deleted, errors);
             let mut response = request.into_response(200, Some("OK"), &[("Content-Type", "application/json")])?;
             response.write_all(format!("{{\"deleted\":{},\"errors\":{}}}", deleted, errors).as_bytes())?;
             Ok::<(), anyhow::Error>(())

@@ -91,7 +91,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }
-            is BleStatus.Disconnected -> _uiState.value = _uiState.value.copy(bleScanning = false, bleConnected = false)
+            is BleStatus.Disconnected -> {
+                _uiState.value = _uiState.value.copy(bleScanning = false, bleConnected = false)
+                if (_uiState.value.mediaSession == MediaSession.None) {
+                    viewModelScope.launch {
+                        delay(2000)
+                        if (_uiState.value.mediaSession == MediaSession.None) {
+                            connectBle()
+                        }
+                    }
+                }
+            }
             is BleStatus.Error -> _uiState.value = _uiState.value.copy(bleScanning = false, bleError = st.msg)
             is BleStatus.Idle -> {}
         }

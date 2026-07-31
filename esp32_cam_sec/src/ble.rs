@@ -49,7 +49,11 @@ impl BleControl {
         let server = device.get_server();
 
         server.on_connect(|_server, _desc| info!("BLE: cliente conectado"));
-        server.on_disconnect(|_desc, _reason| info!("BLE: cliente desconectado"));
+        server.on_disconnect(|_desc, _reason| {
+            info!("BLE: cliente desconectado, reiniciando anuncios");
+            let mut adv = esp32_nimble::BLEDevice::take().get_advertising().lock();
+            let _ = adv.start();
+        });
 
         let service = server.create_service(SVC_UUID);
 

@@ -65,7 +65,7 @@ class WifiLink(private val context: Context) {
         return OkHttpClient.Builder()
             .socketFactory(net.socketFactory)
             .connectTimeout(5, TimeUnit.SECONDS)
-            .readTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
             .build()
     }
 

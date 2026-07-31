@@ -169,16 +169,17 @@ fn main() -> anyhow::Result<()> {
 
         // ===== Grabación por movimiento (en ambos modos si está armado) =====
         let armed = armed_flag.load(Ordering::Relaxed);
-        if armed && is_motion && last_record.elapsed().as_secs() >= RECORD_COOLDOWN_SECS {
+        
+        // El sensor PIR necesita unos 15 segundos tras el encendido para estabilizarse.
+        // Si no, al reiniciar la placa (estando armada), grabaría falsos positivos en bucle.
+        let warmup_ok = tick > 60; // 60 ticks * 250ms = 15 segundos aprox
+        
+        if armed && is_motion && warmup_ok && last_record.elapsed().as_secs() >= RECORD_COOLDOWN_SECS {
             show_led(&mut status, led::LedState::Recording, true);
             record_event_clip(cam.as_ref(), sd.as_ref(), ble.as_ref());
             last_record = Instant::now();
-            let mut quiet = Instant::now();
-            while quiet.elapsed().as_secs() < RECORD_COOLDOWN_SECS {
-                if ble.as_ref().map_or(false, |b| b.has_pending(ble::CMD_DISARM)) { break; }
-                if motion_sensor.is_high() { quiet = Instant::now(); }
-                thread::sleep(Duration::from_millis(150));
-            }
+            // Eliminado el bucle bloqueante 'quiet' para permitir procesar comandos BLE 
+            // y que el LED muestre el estado real sin quedarse "congelado".
         }
 
         // ===== LED =====
