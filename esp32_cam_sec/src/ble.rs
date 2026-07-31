@@ -61,13 +61,13 @@ impl BleControl {
         // Se requiere estar emparejado (bonding) para leer.
         let state_char = service
             .lock()
-            .create_characteristic(STATE_UUID, NimbleProperties::READ_ENC | NimbleProperties::NOTIFY);
+            .create_characteristic(STATE_UUID, NimbleProperties::READ | NimbleProperties::READ_ENC | NimbleProperties::NOTIFY);
         state_char.lock().set_value(&[initial_armed as u8, 0, 0]);
 
         // Característica Comando: write_enc.
         let cmd_char = service
             .lock()
-            .create_characteristic(CMD_UUID, NimbleProperties::WRITE_ENC);
+            .create_characteristic(CMD_UUID, NimbleProperties::WRITE | NimbleProperties::WRITE_ENC);
         let cq = cmd_queue.clone();
         let st = set_time_ms.clone();
         cmd_char.lock().on_write(move |args| {
@@ -93,7 +93,6 @@ impl BleControl {
         security.set_auth(esp32_nimble::enums::AuthReq::Bond | esp32_nimble::enums::AuthReq::Mitm);
         security.set_io_cap(esp32_nimble::enums::SecurityIOCap::DisplayOnly);
         security.set_passkey(123456); // PIN de emparejamiento estático
-        security.resolve_rpa();
 
         let advertising = device.get_advertising();
         advertising
