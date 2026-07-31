@@ -83,7 +83,7 @@ class CameraRepository {
         }
     }
 
-    suspend fun deleteAllPhotos(cliesolnt: OkHttpClient?, baseUrl: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun deleteAllPhotos(client: OkHttpClient?, baseUrl: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val body = "".toRequestBody(null)
             val request = Request.Builder().url("$baseUrl/deleteall").post(body).build()

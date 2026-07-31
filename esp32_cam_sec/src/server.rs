@@ -61,7 +61,7 @@ fn save_armed_nvs(partition: EspDefaultNvsPartition, armed: bool) {
 
 macro_rules! require_auth {
     ($req:expr) => {
-        if $req.header("Authorization") != Some("Basic YWRtaW46MTIzNDU2") {
+        if $req.header("Authorization") != Some("Basic YWRtaW46MDAxOTg5") {
             let mut response = $req.into_response(401, Some("Unauthorized"), &[("WWW-Authenticate", "Basic realm=\"CamSec\"")])?;
             response.write_all(b"Unauthorized")?;
             return Ok::<(), anyhow::Error>(());

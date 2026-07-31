@@ -42,3 +42,4 @@ CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
 # así que los pines 19/20 quedan libres para la consola. Permite ver logs y panics por el
 # USB nativo (antes iba por UART0 físico, no conectado).
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_BT_NIMBLE_NVS_PERSIST=y

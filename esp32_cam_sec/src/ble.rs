@@ -92,7 +92,7 @@ impl BleControl {
         let mut security = device.security();
         security.set_auth(esp32_nimble::enums::AuthReq::Bond | esp32_nimble::enums::AuthReq::Mitm);
         security.set_io_cap(esp32_nimble::enums::SecurityIOCap::DisplayOnly);
-        security.set_passkey(123456); // PIN de emparejamiento estático
+        security.set_passkey(1989); // PIN de emparejamiento estático (se autocompleta a 001989)
 
         let advertising = device.get_advertising();
         advertising
