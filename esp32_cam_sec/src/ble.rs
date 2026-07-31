@@ -5,7 +5,7 @@
 //! Está siempre disponible en proximidad (la moto aparcada) con muy bajo consumo.
 
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::{Arc, Mutex as StdMutex, atomic::{AtomicU8, Ordering}};
 use esp32_nimble::{BLEDevice, BLEAdvertisementData, BLECharacteristic, NimbleProperties, uuid128};
 use esp32_nimble::utilities::{BleUuid, mutex::Mutex};
 use ::log::info;
@@ -30,6 +30,9 @@ pub struct BleControl {
     /// Epoch en ms recibido con CMD_SET_TIME (0 = no recibido). (El S3 no tiene AtomicU64.)
     set_time_ms: Arc<StdMutex<u64>>,
     state_char: Arc<Mutex<BLECharacteristic>>,
+    /// Último estado notificado empaquetado (armed|motion<<1|wifi<<2), 0xFF = aún ninguno.
+    /// Evita notificar cada iteración: solo se emite BLE cuando el estado cambia de verdad.
+    last_state: Arc<AtomicU8>,
 }
 
 impl BleControl {
@@ -92,7 +95,7 @@ impl BleControl {
 
         info!("BLE: anunciando como 'CAMSEC' (servicio Alarm Control)");
 
-        Self { cmd_queue, set_time_ms, state_char }
+        Self { cmd_queue, set_time_ms, state_char, last_state: Arc::new(AtomicU8::new(0xFF)) }
     }
 
     /// Devuelve y consume el siguiente comando de la cola (FIFO), o None.
@@ -114,8 +117,13 @@ impl BleControl {
         if t == 0 { None } else { Some(t) }
     }
 
-    /// Actualiza la característica Estado y notifica a los clientes suscritos.
+    /// Actualiza la característica Estado y notifica a los clientes **solo si cambió** (evita
+    /// inundar la conexión BLE con una notify cada iteración del bucle).
     pub fn update_state(&self, armed: bool, motion: bool, wifi_on: bool) {
+        let packed = (armed as u8) | ((motion as u8) << 1) | ((wifi_on as u8) << 2);
+        if self.last_state.swap(packed, Ordering::Relaxed) == packed {
+            return; // sin cambios: no notificar
+        }
         let mut ch = self.state_char.lock();
         ch.set_value(&[armed as u8, motion as u8, wifi_on as u8]);
         ch.notify();

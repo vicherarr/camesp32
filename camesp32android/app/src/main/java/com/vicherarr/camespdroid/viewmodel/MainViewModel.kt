@@ -22,6 +22,8 @@ data class UiState(
     val bleConnected: Boolean = false,
     val bleScanning: Boolean = false,
     val bleError: String? = null,
+    val bleDevicesSeen: Int = 0,
+    val bleCameraSeen: Boolean = false,
     val armed: Boolean = false,
     val motion: Boolean = false,
     val deviceWifiOn: Boolean = false,
@@ -67,18 +69,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun onBleStatus(st: BleStatus) {
         when (st) {
-            is BleStatus.Scanning -> _uiState.value = _uiState.value.copy(bleScanning = true, bleConnected = false, bleError = null)
-            is BleStatus.Connecting -> _uiState.value = _uiState.value.copy(bleScanning = true, bleConnected = false)
+            is BleStatus.Scanning -> _uiState.value = _uiState.value.copy(
+                bleScanning = true, bleConnected = false, bleError = null,
+                bleDevicesSeen = st.devicesSeen, bleCameraSeen = st.cameraSeen
+            )
+            is BleStatus.Connecting -> _uiState.value = _uiState.value.copy(bleScanning = true, bleConnected = false, bleCameraSeen = true)
             is BleStatus.Connected -> {
                 val first = !_uiState.value.bleConnected
                 _uiState.value = _uiState.value.copy(
                     bleScanning = false, bleConnected = true, bleError = null,
                     armed = st.state.armed, motion = st.state.motion, deviceWifiOn = st.state.wifiOn
                 )
-                // Al conectar por primera vez, sincroniza la hora (epoch local en ms).
+                // Al conectar por primera vez, sincroniza la hora (epoch local en ms). Con un
+                // pequeño retraso para no chocar con la activación de notificaciones (una op GATT
+                // cada vez).
                 if (first) {
-                    val offset = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis())
-                    ble.setTime(System.currentTimeMillis() + offset)
+                    viewModelScope.launch {
+                        delay(700)
+                        val offset = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis())
+                        ble.setTime(System.currentTimeMillis() + offset)
+                    }
                 }
             }
             is BleStatus.Disconnected -> _uiState.value = _uiState.value.copy(bleScanning = false, bleConnected = false)

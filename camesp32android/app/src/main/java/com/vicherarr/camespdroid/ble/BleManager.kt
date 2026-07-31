@@ -1,6 +1,7 @@
 package com.vicherarr.camespdroid.ble
 
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
@@ -12,6 +13,7 @@ import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.Build
+import android.os.ParcelUuid
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,7 +24,8 @@ data class DeviceState(val armed: Boolean, val motion: Boolean, val wifiOn: Bool
 
 sealed interface BleStatus {
     data object Idle : BleStatus
-    data object Scanning : BleStatus
+    /** Escaneando. `devicesSeen`/`cameraSeen` son diagnóstico para saber qué ve el escáner. */
+    data class Scanning(val devicesSeen: Int = 0, val cameraSeen: Boolean = false) : BleStatus
     data object Connecting : BleStatus
     data class Connected(val state: DeviceState) : BleStatus
     data object Disconnected : BleStatus
@@ -61,7 +64,11 @@ class BleManager(private val context: Context) {
 
     private var gatt: BluetoothGatt? = null
     private var cmdChar: BluetoothGattCharacteristic? = null
+    private var stateChar: BluetoothGattCharacteristic? = null
     private var scanning = false
+    private var connecting = false
+    private val seen = mutableSetOf<String>()
+    private var cameraSeen = false
 
     // ---- Escaneo + conexión ----
     fun startScanAndConnect() {
@@ -72,10 +79,13 @@ class BleManager(private val context: Context) {
         }
         if (scanning) return
         scanning = true
-        _status.value = BleStatus.Scanning
-        val filters = listOf(ScanFilter.Builder().setDeviceName(DEVICE_NAME).build())
+        connecting = false
+        seen.clear()
+        cameraSeen = false
+        _status.value = BleStatus.Scanning()
+        // Escaneo SIN filtro (diagnóstico): emparejamos por UUID de servicio o nombre en el callback.
         val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
-        scanner.startScan(filters, settings, scanCallback)
+        scanner.startScan(null, settings, scanCallback)
     }
 
     private fun stopScan() {
@@ -87,10 +97,18 @@ class BleManager(private val context: Context) {
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val device = result.device ?: return
-            if (device.name == DEVICE_NAME || result.scanRecord?.deviceName == DEVICE_NAME) {
+            seen.add(device.address)
+            val hasSvc = result.scanRecord?.serviceUuids?.any { it.uuid == SERVICE_UUID } == true
+            val byName = device.name == DEVICE_NAME || result.scanRecord?.deviceName == DEVICE_NAME
+            if (hasSvc || byName) cameraSeen = true
+            // Actualiza el diagnóstico visible mientras escanea.
+            if (!connecting) _status.value = BleStatus.Scanning(seen.size, cameraSeen)
+
+            if ((hasSvc || byName) && !connecting) {
+                connecting = true
                 stopScan()
                 _status.value = BleStatus.Connecting
-                gatt = device.connectGatt(context, false, gattCallback, BluetoothProfile.GATT)
+                gatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
             }
         }
 
@@ -107,8 +125,24 @@ class BleManager(private val context: Context) {
 
     private fun cleanup() {
         cmdChar = null
+        stateChar = null
+        connecting = false
         gatt?.close()
         gatt = null
+    }
+
+    private fun enableStateNotifications(g: BluetoothGatt) {
+        val ch = stateChar ?: return
+        g.setCharacteristicNotification(ch, true)
+        val cccd = ch.getDescriptor(CCCD_UUID) ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            g.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+        } else {
+            @Suppress("DEPRECATION")
+            cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            @Suppress("DEPRECATION")
+            g.writeDescriptor(cccd)
+        }
     }
 
     // ---- Callbacks GATT ----
@@ -130,30 +164,25 @@ class BleManager(private val context: Context) {
                 return
             }
             cmdChar = service.getCharacteristic(CMD_UUID)
-            val stateChar = service.getCharacteristic(STATE_UUID)
-            if (stateChar != null) {
-                g.setCharacteristicNotification(stateChar, true)
-                stateChar.getDescriptor(CCCD_UUID)?.let { cccd ->
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        g.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                        @Suppress("DEPRECATION")
-                        g.writeDescriptor(cccd)
-                    }
-                }
-                g.readCharacteristic(stateChar)
-            }
+            stateChar = service.getCharacteristic(STATE_UUID)
+            // Primero LEER el estado inicial; las notificaciones se activan después (en onRead),
+            // para no encadenar dos operaciones GATT a la vez (Android exige una cada vez).
+            stateChar?.let { g.readCharacteristic(it) } ?: enableStateNotifications(g)
         }
 
         override fun onCharacteristicRead(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray, statusCode: Int) {
-            if (ch.uuid == STATE_UUID) parseState(value)
+            if (ch.uuid == STATE_UUID) {
+                parseState(value)
+                enableStateNotifications(g)
+            }
         }
 
         @Deprecated("Deprecated in Java")
         override fun onCharacteristicRead(g: BluetoothGatt, ch: BluetoothGattCharacteristic, statusCode: Int) {
-            if (ch.uuid == STATE_UUID) parseState(@Suppress("DEPRECATION") ch.value)
+            if (ch.uuid == STATE_UUID) {
+                parseState(@Suppress("DEPRECATION") ch.value)
+                enableStateNotifications(g)
+            }
         }
 
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray) {

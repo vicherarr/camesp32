@@ -142,6 +142,13 @@ fun HomeScreen(
                         color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp
                     )
                     Text("Control de alarma por BLE", color = Color.LightGray, fontSize = 12.sp)
+                    // Diagnóstico de escaneo (temporal): cuántos BLE ve y si detecta la cámara.
+                    if (!connected && uiState.bleScanning) {
+                        Text(
+                            "Escaneo: ${uiState.bleDevicesSeen} BLE vistos · cámara: ${if (uiState.bleCameraSeen) "SÍ" else "no"}",
+                            color = if (uiState.bleCameraSeen) EmeraldGreen else AlarmAmber, fontSize = 11.sp
+                        )
+                    }
                 }
                 if (!connected && !uiState.bleScanning) {
                     OutlinedButton(onClick = onRetryBle) { Text("Reintentar") }
