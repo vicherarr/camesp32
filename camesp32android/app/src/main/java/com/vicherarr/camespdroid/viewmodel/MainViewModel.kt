@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /** Estado de la sesión de media por WiFi. */
-enum class MediaSession { None, Opening, Active, Error }
+enum class MediaSession { None, Opening, Active, Closing, Error }
 
 data class UiState(
     val bleConnected: Boolean = false,
@@ -146,8 +146,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeMediaSession() {
+        if (_uiState.value.mediaSession == MediaSession.Closing) return
         stopLiveSnapshots()
         viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(mediaSession = MediaSession.Closing, toastMessage = "Cerrando WiFi de la cámara…")
             // Pide a la cámara cerrar WiFi y volver a BLE, suelta el enlace y reconecta BLE.
             repo.requestWifiOff(wifiLink.httpClient(), BASE_URL)
             wifiLink.release()
@@ -220,7 +222,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun selectTab(index: Int) {
         _uiState.value = _uiState.value.copy(selectedTab = index)
         if (index != 1) stopLiveSnapshots()
-        if (index == 2) refreshMediaList()
+        
+        // Cambio automático de conexión según la pestaña
+        if (index == 1 || index == 2) {
+            // Requiere WiFi
+            if (_uiState.value.mediaSession == MediaSession.None && _uiState.value.bleConnected) {
+                openMediaSession()
+            } else if (_uiState.value.mediaSession == MediaSession.Active) {
+                if (index == 2) refreshMediaList()
+                else if (index == 1) startLiveSnapshots()
+            }
+        } else if (index == 0 || index == 3) {
+            // Requiere BLE (cerramos WiFi si estaba activo)
+            if (_uiState.value.mediaSession != MediaSession.None && _uiState.value.mediaSession != MediaSession.Closing) {
+                closeMediaSession()
+            }
+        }
     }
 
     fun clearToast() {

@@ -79,53 +79,18 @@ fun LiveStreamScreen(
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(
-                        onClick = onCapture,
-                        modifier = Modifier.weight(1f).height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentCyan)
-                    ) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Capturar", fontWeight = FontWeight.Bold)
-                    }
-                    OutlinedButton(onClick = onCloseMedia, modifier = Modifier.height(52.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = null)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Cerrar cámara")
-                    }
-                }
-            }
-            MediaSession.Opening -> CenterInfo("Encendiendo el WiFi de la cámara…", spinner = true)
-            else -> {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceCard)
+                Button(
+                    onClick = onCapture,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentCyan)
                 ) {
-                    Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.Videocam, contentDescription = null, tint = AccentCyan, modifier = Modifier.size(56.dp))
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text("Ver la cámara en vivo", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "Se encenderá el WiFi de la cámara y el móvil se enlazará a él (sin cambiar tu red). Requiere estar conectado por Bluetooth.",
-                            color = Color.LightGray, fontSize = 13.sp, textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(20.dp))
-                        Button(
-                            onClick = onOpenMedia,
-                            enabled = uiState.bleConnected,
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen)
-                        ) {
-                            Text("Encender cámara (WiFi)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        }
-                    }
+                    Icon(Icons.Default.CameraAlt, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Capturar", fontWeight = FontWeight.Bold)
                 }
             }
+            else -> CenterInfo("Preparando la conexión con la cámara...", spinner = true)
         }
     }
 }

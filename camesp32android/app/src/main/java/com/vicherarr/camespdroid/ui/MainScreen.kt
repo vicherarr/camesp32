@@ -20,8 +20,14 @@ import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -166,6 +172,30 @@ fun MainScreen(viewModel: MainViewModel) {
                     )
                 }
                 3 -> SettingsScreen(uiState = uiState)
+            }
+        }
+    }
+    
+    // Dialog de progreso general para cambios de conexión
+    if (uiState.mediaSession == MediaSession.Opening || uiState.mediaSession == MediaSession.Closing) {
+        Dialog(onDismissRequest = { /* No cancelable */ }) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = SurfaceDark
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(color = AccentCyan)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = if (uiState.mediaSession == MediaSession.Opening) "Conectando WiFi de la cámara..." else "Cerrando WiFi y volviendo a BLE...",
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
     }

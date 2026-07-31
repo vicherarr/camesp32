@@ -71,24 +71,12 @@ fun GalleryScreen(
 ) {
     if (uiState.mediaSession != MediaSession.Active) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(24.dp),
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(Icons.Default.Collections, contentDescription = null, tint = AccentCyan, modifier = Modifier.size(56.dp))
-            Spacer(modifier = Modifier.height(12.dp))
-            Text("Galería en la SD", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "Enciende el WiFi de la cámara para ver las fotos y los clips grabados.",
-                color = Color.LightGray, fontSize = 13.sp, textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(20.dp))
-            Button(
-                onClick = onOpenMedia,
-                enabled = uiState.bleConnected,
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = EmeraldGreen)
-            ) { Text("Encender cámara (WiFi)", fontWeight = FontWeight.Bold) }
+            CircularProgressIndicator(color = AccentCyan)
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Preparando la conexión con la cámara...", color = Color.LightGray, fontSize = 14.sp)
         }
         return
     }
