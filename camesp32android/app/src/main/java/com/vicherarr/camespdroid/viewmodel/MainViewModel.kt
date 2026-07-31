@@ -88,7 +88,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         delay(700)
                         val offset = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis())
                         ble.setTime(System.currentTimeMillis() + offset)
+                        
+                        // Si estamos en una pestaña que requiere WiFi, lo levantamos
+                        if (_uiState.value.mediaSession == MediaSession.None && (_uiState.value.selectedTab == 1 || _uiState.value.selectedTab == 2)) {
+                            openMediaSession()
+                        }
                     }
+                } else if (_uiState.value.mediaSession == MediaSession.None && (_uiState.value.selectedTab == 1 || _uiState.value.selectedTab == 2)) {
+                    openMediaSession()
                 }
             }
             is BleStatus.Disconnected -> {
