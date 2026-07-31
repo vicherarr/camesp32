@@ -47,6 +47,12 @@ pub struct StatusLed<'d> {
     tx: TxRmtDriver<'d>,
 }
 
+pub enum ConnMode {
+    None,
+    Ble,
+    Wifi,
+}
+
 impl<'d> StatusLed<'d> {
     pub fn new<C: RmtChannel + 'd>(
         channel: C,
@@ -81,11 +87,17 @@ impl<'d> StatusLed<'d> {
         self.set(0, 0, 0)
     }
 
-    /// Muestra el color/patrón correspondiente al estado del sistema.
-    ///
-    /// `phase` es un booleano que el bucle principal alterna en cada tick; los estados con
-    /// parpadeo/pulso lo usan para saber en qué mitad del ciclo están. Los estados fijos lo ignoran.
-    pub fn show(&mut self, state: LedState, phase: bool) -> Result<()> {
+    /// Muestra el color/patrón correspondiente al estado del sistema, intercalado con
+    /// el estado de conexión si `show_conn` es true.
+    pub fn show(&mut self, state: LedState, phase: bool, conn: ConnMode, show_conn: bool) -> Result<()> {
+        if show_conn {
+            match conn {
+                ConnMode::Ble => return self.set(0, 40, 60),  // 🩵 cian (BLE)
+                ConnMode::Wifi => return self.set(60, 40, 0), // 💛 amarillo (WiFi)
+                ConnMode::None => {} // Si no hay conexión, sigue con el estado normal
+            }
+        }
+
         match state {
             LedState::Booting => self.set(60, 0, 0), // 🔴 rojo fijo
             LedState::Disarmed => {

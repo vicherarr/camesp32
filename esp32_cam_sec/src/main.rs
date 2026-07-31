@@ -42,9 +42,9 @@ fn set_system_time_ms(ms: u64) {
 }
 
 /// Muestra un estado del sistema en el LED (ignora si no hay LED).
-fn show_led(status: &mut Option<led::StatusLed<'static>>, state: led::LedState, phase: bool) {
+fn show_led(status: &mut Option<led::StatusLed<'static>>, state: led::LedState, phase: bool, conn: led::ConnMode, show_conn: bool) {
     if let Some(s) = status.as_mut() {
-        let _ = s.show(state, phase);
+        let _ = s.show(state, phase, conn, show_conn);
     }
 }
 
@@ -59,7 +59,7 @@ fn main() -> anyhow::Result<()> {
         Ok(l) => Some(l),
         Err(e) => { error!("Status LED init failed (continuando): {}", e); None }
     };
-    show_led(&mut status, led::LedState::Booting, true);
+    show_led(&mut status, led::LedState::Booting, true, led::ConnMode::None, false);
 
     let nvs_partition = EspDefaultNvsPartition::take()?;
     let (mut cfg, mut nvs_handle) = config::load_config(nvs_partition.clone());
@@ -175,7 +175,7 @@ fn main() -> anyhow::Result<()> {
         let warmup_ok = tick > 60; // 60 ticks * 250ms = 15 segundos aprox
         
         if armed && is_motion && warmup_ok && last_record.elapsed().as_secs() >= RECORD_COOLDOWN_SECS {
-            show_led(&mut status, led::LedState::Recording, true);
+            show_led(&mut status, led::LedState::Recording, true, led::ConnMode::None, false);
             record_event_clip(cam.as_ref(), sd.as_ref(), ble.as_ref());
             last_record = Instant::now();
             // Eliminado el bucle bloqueante 'quiet' para permitir procesar comandos BLE 
@@ -184,7 +184,9 @@ fn main() -> anyhow::Result<()> {
 
         // ===== LED =====
         let led_state = if armed { led::LedState::ArmedWindow } else { led::LedState::Disarmed };
-        show_led(&mut status, led_state, tick % 2 == 0);
+        let conn_mode = if session.is_some() { led::ConnMode::Wifi } else if ble.as_ref().map_or(false, |b| b.is_connected()) { led::ConnMode::Ble } else { led::ConnMode::None };
+        let show_conn = tick % 4 == 0;
+        show_led(&mut status, led_state, tick % 2 == 0, conn_mode, show_conn);
 
         if tick % 40 == 0 {
             info!("modo={} armed={} motion={}", if session.is_some() { "WiFi" } else { "BLE" }, armed, is_motion);

@@ -5,7 +5,7 @@
 //! Está siempre disponible en proximidad (la moto aparcada) con muy bajo consumo.
 
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex as StdMutex, atomic::{AtomicU8, Ordering}};
+use std::sync::{Arc, Mutex as StdMutex, atomic::{AtomicU8, AtomicBool, Ordering}};
 use esp32_nimble::{BLEDevice, BLEAdvertisementData, BLECharacteristic, NimbleProperties, uuid128};
 use esp32_nimble::utilities::{BleUuid, mutex::Mutex};
 use ::log::info;
@@ -33,6 +33,7 @@ pub struct BleControl {
     /// Último estado notificado empaquetado (armed|motion<<1|wifi<<2), 0xFF = aún ninguno.
     /// Evita notificar cada iteración: solo se emite BLE cuando el estado cambia de verdad.
     last_state: Arc<AtomicU8>,
+    is_connected: Arc<AtomicBool>,
 }
 
 impl BleControl {
@@ -41,6 +42,7 @@ impl BleControl {
     pub fn start(initial_armed: bool) -> Self {
         let cmd_queue = Arc::new(StdMutex::new(VecDeque::<u8>::new()));
         let set_time_ms = Arc::new(StdMutex::new(0u64));
+        let is_connected = Arc::new(AtomicBool::new(false));
 
         // Idempotente: en el primer arranque no hace nada extra; tras un shutdown re-inicializa
         // el controlador BLE (que se deinicializó para liberar RAM durante la sesión WiFi).
@@ -48,9 +50,16 @@ impl BleControl {
         let device = BLEDevice::take();
         let server = device.get_server();
 
-        server.on_connect(|_server, _desc| info!("BLE: cliente conectado"));
-        server.on_disconnect(|_desc, _reason| {
+        let conn_flag1 = is_connected.clone();
+        server.on_connect(move |_server, _desc| {
+            info!("BLE: cliente conectado");
+            conn_flag1.store(true, Ordering::Relaxed);
+        });
+        
+        let conn_flag2 = is_connected.clone();
+        server.on_disconnect(move |_desc, _reason| {
             info!("BLE: cliente desconectado, reiniciando anuncios");
+            conn_flag2.store(false, Ordering::Relaxed);
             let mut adv = esp32_nimble::BLEDevice::take().get_advertising().lock();
             let _ = adv.start();
         });
@@ -107,7 +116,12 @@ impl BleControl {
 
         info!("BLE: anunciando como 'CAMSEC' (servicio Alarm Control)");
 
-        Self { cmd_queue, set_time_ms, state_char, last_state: Arc::new(AtomicU8::new(0xFF)) }
+        Self { cmd_queue, set_time_ms, state_char, last_state: Arc::new(AtomicU8::new(0xFF)), is_connected }
+    }
+
+    /// Retorna true si hay algún cliente conectado al servidor BLE.
+    pub fn is_connected(&self) -> bool {
+        self.is_connected.load(Ordering::Relaxed)
     }
 
     /// Devuelve y consume el siguiente comando de la cola (FIFO), o None.

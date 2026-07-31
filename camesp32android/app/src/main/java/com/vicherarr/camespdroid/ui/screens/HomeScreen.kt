@@ -149,6 +149,11 @@ fun HomeScreen(
                             color = if (uiState.bleCameraSeen) EmeraldGreen else AlarmAmber, fontSize = 11.sp
                         )
                     }
+                    Text(
+                        "🔒 PIN BLE de la cámara: 001989",
+                        color = AccentCyan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
                 if (!connected && !uiState.bleScanning) {
                     OutlinedButton(onClick = onRetryBle) { Text("Reintentar") }
@@ -204,6 +209,8 @@ private fun LedLegendCard() {
             LedRow(EmeraldGreen, "Verde (pulso)", "Desarmada")
             LedRow(Color(0xFF2196F3), "Azul (parpadeo)", "Armada")
             LedRow(Color(0xFFD500F9), "Magenta fijo", "Grabando vídeo")
+            LedRow(Color(0xFF00E5FF), "Cian (mixto)", "Conectado BLE")
+            LedRow(Color(0xFFFFEB3B), "Amarillo (mixto)", "Conectado WiFi")
             LedRow(Color(0xFF555555), "Apagado", "Deep sleep")
         }
     }
