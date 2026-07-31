@@ -64,11 +64,11 @@ import com.vicherarr.camespdroid.viewmodel.MediaSession
 fun MainScreen(viewModel: MainViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    var wifiCountdown by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(12) }
+    var wifiCountdown by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(8) }
 
     LaunchedEffect(uiState.mediaSession) {
         if (uiState.mediaSession == MediaSession.Opening) {
-            wifiCountdown = 12
+            wifiCountdown = 8
             while (wifiCountdown > 0) {
                 kotlinx.coroutines.delay(1000)
                 wifiCountdown--
